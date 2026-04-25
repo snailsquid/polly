@@ -17,7 +17,7 @@ Real-time Discord poll system for live audiences. Create, manage, and display po
 
 - [Bun](https://bun.sh) runtime
 - Docker & Docker Compose
-- A Discord Bot Token ([Create one here](https://discord.com/developers/applications))
+- Discord account
 
 ### Installation
 
@@ -37,18 +37,16 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### Configuration
+## Setup
 
-Create a `.env` file:
-
-```env
-DISCORD_BOT_TOKEN=your_bot_token_here
-DATABASE_URL=postgres://user:pass@localhost:5432/polly
-WHITELIST_USER_IDS=your_discord_user_id
-```
+Follow the [Setup Guide](docs/setup.md) for:
+- Creating a Discord bot and getting your token
+- Inviting the bot to your server
+- Configuring environment variables
 
 ## Documentation
 
+- [Setup Guide](docs/setup.md) - Discord bot configuration
 - [User Guide](docs/user-guide.md) - Detailed workflow documentation
 - [Architecture](docs/architecture.md) - System design and technical specs
 

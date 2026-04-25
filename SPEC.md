@@ -48,7 +48,8 @@ Backend for real-time Discord poll system. Handles Discord bot events, WebSocket
 ### 4. Authentication & Whitelist
 
 - Discord user ID sent with WebSocket/REST requests
-- Check against `WHITELIST_USER_IDS` env var (comma-separated)
+- Check against `WHITELIST_USER_IDS` env var (comma-separated list of Discord user IDs)
+- Example: `WHITELIST_USER_IDS=123456789,987654321`
 - Only whitelisted users can create/modify polls
 
 ## Data Model
