@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+*.log
+.git
+.gitignore
+README.md
+docs
+flow.md
+requirement.md
+*.md
