@@ -15,7 +15,7 @@ Real-time Discord poll system for live audiences. Create, manage, and display po
 
 ### Prerequisites
 
-- Node.js 20+
+- [Bun](https://bun.sh) runtime
 - Docker & Docker Compose
 - A Discord Bot Token ([Create one here](https://discord.com/developers/applications))
 
@@ -27,14 +27,14 @@ git clone https://github.com/hexagononyt/polly.git
 cd polly
 
 # Install dependencies
-npm install
+bun install
 
 # Configure environment
 cp .env.example .env
 # Edit .env with your Discord bot token
 
 # Start with Docker
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Configuration
@@ -44,6 +44,7 @@ Create a `.env` file:
 ```env
 DISCORD_BOT_TOKEN=your_bot_token_here
 DATABASE_URL=postgres://user:pass@localhost:5432/polly
+WHITELIST_USER_IDS=your_discord_user_id
 ```
 
 ## Documentation
@@ -53,10 +54,24 @@ DATABASE_URL=postgres://user:pass@localhost:5432/polly
 
 ## Tech Stack
 
-- **Backend**: Node.js with WebSocket support
-- **Frontend**: React with shadcn UI components
-- **Database**: PostgreSQL
+- **Runtime**: Bun with TypeScript
+- **Discord**: discord.js v14
+- **Database**: PostgreSQL + Prisma ORM
 - **Container**: Docker & Docker Compose
+
+## Development
+
+```bash
+# Run in development mode
+bun run dev
+
+# Build for production
+bun run build
+
+# Database operations
+bun run db:generate  # Generate Prisma client
+bun run db:push      # Push schema to database
+```
 
 ## License
 

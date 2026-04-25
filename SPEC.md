@@ -6,7 +6,7 @@ Backend for real-time Discord poll system. Handles Discord bot events, WebSocket
 
 ## Tech Stack
 
-- **Runtime**: Node.js 20+ with TypeScript
+- **Runtime**: Bun with TypeScript
 - **Discord**: discord.js v14
 - **Database**: PostgreSQL + Prisma ORM
 - **WebSocket**: ws library
@@ -125,7 +125,7 @@ src/
 
 ## Docker Configuration
 
-- `Dockerfile`: Node 20 Alpine, production build
+- `Dockerfile`: Bun Alpine, production build
 - `docker-compose.yml`: App + PostgreSQL + volumes
 
 ## Acceptance Criteria

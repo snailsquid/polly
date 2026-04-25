@@ -1,20 +1,20 @@
-FROM node:20-alpine AS builder
+FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache gcc musl-dev
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json bun.lockb* ./
+RUN bun install
 
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN bunx prisma generate
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN bun run build
 
-FROM node:20-alpine AS production
+FROM oven/bun:1-alpine AS production
 
 WORKDIR /app
 
@@ -23,9 +23,9 @@ RUN apk add --no-cache dumb-init
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/package.json ./
 
-RUN npx prisma migrate deploy
+RUN bunx prisma migrate deploy
 
 ENV NODE_ENV=production
 
@@ -35,4 +35,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/polls || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/index.js"]
+CMD ["bun", "run", "dist/index.js"]
