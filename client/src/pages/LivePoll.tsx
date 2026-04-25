@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getPoll, endPoll } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/useAuth';
 import { toast } from 'sonner';
 import type { Option } from '@/types';
 
@@ -45,24 +45,34 @@ function BarChart({ votes, options }: { votes: VoteCount[]; options: Option[] })
 
 function PieChart({ votes, options }: { votes: VoteCount[]; options: Option[] }) {
   const total = votes.reduce((sum, v) => sum + v.count, 0);
-  const colors = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
-  let currentAngle = 0;
-  const slices = votes.map((vote) => {
-    const option = options.find((o) => o.number === vote.option);
-    const percentage = total > 0 ? (vote.count / total) * 100 : 0;
-    const angle = (percentage / 100) * 360;
-    const slice = {
-      option: vote.option,
-      label: option?.label || `Option ${vote.option}`,
-      count: vote.count,
-      percentage,
-      startAngle: currentAngle,
-      endAngle: currentAngle + angle,
-      color: colors[(vote.option - 1) % colors.length],
-    };
-    currentAngle += angle;
-    return slice;
-  });
+  const slices = useMemo(() => {
+    const colors = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
+    const colorMap = new Map(options.map((o, i) => [o.number, colors[i % colors.length]]));
+    return votes.reduce<Array<{
+      option: number;
+      label: string;
+      count: number;
+      percentage: number;
+      startAngle: number;
+      endAngle: number;
+      color: string;
+    }>>((acc, vote, i) => {
+      const option = options.find((o) => o.number === vote.option);
+      const percentage = total > 0 ? (vote.count / total) * 100 : 0;
+      const sliceAngle = (percentage / 100) * 360;
+      const startAngle = i === 0 ? 0 : acc[i - 1].endAngle;
+      acc.push({
+        option: vote.option,
+        label: option?.label || `Option ${vote.option}`,
+        count: vote.count,
+        percentage,
+        startAngle,
+        endAngle: startAngle + sliceAngle,
+        color: colorMap.get(vote.option) || colors[vote.option - 1],
+      });
+      return acc;
+    }, []);
+  }, [votes, options, total]);
 
   const radius = 80;
   const centerX = 100;

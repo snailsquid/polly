@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getPoll, updatePoll, deletePoll, startPoll } from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/useAuth';
 import { toast } from 'sonner';
 import type { Poll, Option } from '@/types';
 
@@ -35,8 +35,10 @@ export default function PollDetail() {
     enabled: !!id,
   });
 
+  const initRef = useRef(false);
   useEffect(() => {
-    if (poll) {
+    if (poll && !initRef.current) {
+      initRef.current = true;
       setQuestion(poll.question);
       setChannelId(poll.channelId);
       setGuildId(poll.guildId);

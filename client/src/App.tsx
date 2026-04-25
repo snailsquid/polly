@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { AuthProvider } from '@/contexts/AuthProvider';
+import { useAuth } from '@/contexts/useAuth';
 import { Toaster } from '@/components/ui/sonner';
 import Login from '@/pages/Login';
 import Home from '@/pages/Home';

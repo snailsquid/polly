@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Vote } from '@/types';
 
 interface PollStatus {
@@ -17,14 +17,19 @@ export function useWebSocket(pollId?: string) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollIdRef = useRef(pollId);
+  const sendMessageRef = useRef<((message: WebSocketMessage) => void) | null>(null);
 
-  const sendMessage = useCallback((message: WebSocketMessage) => {
+  pollIdRef.current = pollId;
+
+  const sendMessage = (message: WebSocketMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message));
     }
-  }, []);
+  };
+  sendMessageRef.current = sendMessage;
 
-  const connect = useCallback(() => {
+  const connect = () => {
     const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
     const ws = new WebSocket(wsUrl);
 
@@ -34,8 +39,8 @@ export function useWebSocket(pollId?: string) {
       if (userId) {
         sendMessage({ type: 'auth', payload: { userId } });
       }
-      if (pollId) {
-        sendMessage({ type: 'subscribe', payload: { pollId } });
+      if (pollIdRef.current) {
+        sendMessage({ type: 'subscribe', payload: { pollId: pollIdRef.current } });
       }
     };
 
@@ -65,6 +70,9 @@ export function useWebSocket(pollId?: string) {
 
     ws.onclose = () => {
       setIsConnected(false);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       reconnectTimeoutRef.current = setTimeout(connect, 3000);
     };
 
@@ -73,7 +81,7 @@ export function useWebSocket(pollId?: string) {
     };
 
     wsRef.current = ws;
-  }, [pollId, sendMessage]);
+  };
 
   useEffect(() => {
     connect();
@@ -83,13 +91,13 @@ export function useWebSocket(pollId?: string) {
       }
       wsRef.current?.close();
     };
-  }, [connect]);
+  }, []);
 
   useEffect(() => {
     if (pollId && isConnected) {
       sendMessage({ type: 'subscribe', payload: { pollId } });
     }
-  }, [pollId, isConnected, sendMessage]);
+  }, [pollId, isConnected]);
 
   return { votes, pollStatus, isConnected, sendMessage };
 }

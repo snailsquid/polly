@@ -45,25 +45,33 @@ function BarChart({ votes }: { votes: VoteCount[] }) {
 }
 
 function PieChart({ votes, options }: { votes: VoteCount[]; options: Option[] }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const colors = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
-  let currentAngle = 0;
-  const slices = votes.map((vote) => {
-    const option = options.find((o) => o.number === vote.option);
-    const angle = mounted ? vote.percentage * 3.6 : 0;
-    const slice = {
-      option: vote.option,
-      label: option?.label || `Option ${vote.option}`,
-      count: vote.count,
-      percentage: vote.percentage,
-      startAngle: currentAngle,
-      endAngle: currentAngle + angle,
-      color: colors[(vote.option - 1) % colors.length],
-    };
-    currentAngle += angle;
-    return slice;
-  });
+  const slices = useMemo(() => {
+    const colors = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
+    const colorMap = new Map(options.map((o, i) => [o.number, colors[i % colors.length]]));
+    return votes.reduce<Array<{
+      option: number;
+      label: string;
+      count: number;
+      percentage: number;
+      startAngle: number;
+      endAngle: number;
+      color: string;
+    }>>((acc, vote, i) => {
+      const option = options.find((o) => o.number === vote.option);
+      const sliceAngle = vote.percentage * 3.6;
+      const startAngle = i === 0 ? 0 : acc[i - 1].endAngle;
+      acc.push({
+        option: vote.option,
+        label: option?.label || `Option ${vote.option}`,
+        count: vote.count,
+        percentage: vote.percentage,
+        startAngle,
+        endAngle: startAngle + sliceAngle,
+        color: colorMap.get(vote.option) || colors[vote.option - 1],
+      });
+      return acc;
+    }, []);
+  }, [votes, options]);
 
   const radius = 80;
   const centerX = 100;
@@ -100,16 +108,14 @@ function PieChart({ votes, options }: { votes: VoteCount[]; options: Option[] })
 }
 
 function NumberDisplay({ votes, options }: { votes: VoteCount[]; options: Option[] }) {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => setVisible(true), []);
   return (
     <div className="grid grid-cols-3 gap-4">
       {votes.map((vote, i) => {
         const option = options.find((o) => o.number === vote.option);
         return (
-          <Card key={vote.option} className={`transition-all duration-500 ${visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`} style={{ transitionDelay: `${i * 200}ms` }}>
+          <Card key={vote.option} className="animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: `${i * 200}ms`, animationFillMode: 'both' }}>
             <CardContent className="text-center py-6">
-              <div className="text-5xl font-bold">{visible ? vote.count : 0}</div>
+              <div className="text-5xl font-bold">{vote.count}</div>
               <div className="text-sm text-muted-foreground mt-2">{option?.label}</div>
               <div className="text-xs text-muted-foreground mt-1">{vote.percentage.toFixed(1)}%</div>
             </CardContent>

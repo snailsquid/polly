@@ -50,7 +50,7 @@ export default function CreatePoll() {
         options: options.filter((o) => o.label.trim()),
       });
     }
-  }, [question, channelId, guildId, liveTheme, resultTheme, options]);
+  }, [question, channelId, guildId, liveTheme, resultTheme, options, mutation]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
