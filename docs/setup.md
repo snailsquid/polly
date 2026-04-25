@@ -26,11 +26,9 @@
 ### Step 4: Configure Bot Permissions
 
 1. Go to the **OAuth2 > URL Generator** tab
-2. Check the following scopes:
-   - `bot`
-   - `applications.commands`
+2. Check the **bot** scope only
 3. In **Bot Permissions**, check:
-   - `Read Message Content`
+   - `Read Message Content` (required for vote capture)
    - `Send Messages`
    - `View Channels`
 4. Copy the generated URL
