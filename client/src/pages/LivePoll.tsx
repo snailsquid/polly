@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { getPoll, endPoll } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useAuth } from '@/contexts/useAuth';
 import { toast } from 'sonner';
-import type { Option } from '@/types';
+import type { Option, PollRun } from '@/types';
 
 const THEMES = ['bar', 'pie', 'number'] as const;
 
@@ -134,7 +134,10 @@ export default function LivePoll() {
   const queryClient = useQueryClient();
   const { userId } = useAuth();
   const [theme, setTheme] = useState('bar');
-  const { votes: wsVotes, isConnected } = useWebSocket(id);
+  const { votes: wsVotes } = useWebSocket(id);
+  const prevVotesRef = useRef<string>('');
+  const lastAnnounceRef = useRef<number>(0);
+  const [announcement, setAnnouncement] = useState('');
 
   const { data: poll, isLoading } = useQuery({
     queryKey: ['poll', id],
@@ -142,22 +145,11 @@ export default function LivePoll() {
     enabled: !!id,
   });
 
-  const endMutation = useMutation({
-    mutationFn: endPoll,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['poll', id] });
-      toast.success('Poll ended');
-      navigate('/');
-    },
-    onError: (error) => {
-      toast.error((error as { error?: string }).error || 'Failed to end poll');
-    },
-  });
-
   const votes: VoteCount[] = useMemo(() => {
-    const allVotes = wsVotes.length > 0 ? wsVotes : poll?.votes || [];
+    const liveRun = poll?.runs?.find((r: PollRun) => r.status === 'LIVE');
+    const runVotes = wsVotes.length > 0 ? wsVotes : (liveRun?.votes || []);
     const countMap = new Map<number, number>();
-    allVotes.forEach((v) => {
+    runVotes.forEach((v: { option: number }) => {
       countMap.set(v.option, (countMap.get(v.option) || 0) + 1);
     });
     return poll?.options.map((o) => ({
@@ -165,6 +157,35 @@ export default function LivePoll() {
       count: countMap.get(o.number) || 0,
     })) || [];
   }, [wsVotes, poll]);
+
+  useEffect(() => {
+    const voteKey = votes.map((v) => `${v.option}:${v.count}`).join(',');
+    if (prevVotesRef.current && prevVotesRef.current !== voteKey) {
+      const now = Date.now();
+      if (now - lastAnnounceRef.current >= 3000) {
+        const parts = votes.map((v) => {
+          const option = poll?.options.find((o) => o.number === v.option);
+          const label = option?.label || `Option ${v.option}`;
+          return `${label}: ${v.count} votes`;
+        });
+        setAnnouncement(parts.join(', '));
+        lastAnnounceRef.current = now;
+      }
+    }
+    prevVotesRef.current = voteKey;
+  }, [votes, poll?.options]);
+
+  const endMutation = useMutation({
+    mutationFn: endPoll,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['poll', id] });
+      toast.success('Poll ended');
+      navigate(`/poll/${id}`);
+    },
+    onError: (error) => {
+      toast.error((error as { error?: string }).error || 'Failed to end poll');
+    },
+  });
 
   if (isLoading) {
     return <div className="text-center py-8">Loading...</div>;
@@ -175,33 +196,42 @@ export default function LivePoll() {
   }
 
   const isOwner = poll.ownerId === userId;
+  const liveRun = poll.runs?.find((r: PollRun) => r.status === 'LIVE');
+  const isLive = !!liveRun;
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b p-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold">{poll.question}</h1>
-          <span className="text-sm text-green-500 flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </span>
+          <Button variant="ghost" size="sm" onClick={() => navigate(`/poll/${id}`)}>
+            ← Back to Edit
+          </Button>
+        </div>
+        <div className="flex items-center gap-4 flex-1 justify-center">
+          <h1 className="text-xl font-bold text-center">{poll.question}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={theme} onValueChange={(v) => v && setTheme(v)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {THEMES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {isOwner && poll.status === 'LIVE' && (
+          {!isLive ? (
+            <Button variant="secondary" size="sm" onClick={() => navigate(`/poll/${id}/results`)}>
+              View Results
+            </Button>
+          ) : (
+            <Select value={theme} onValueChange={(v) => v && setTheme(v)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THEMES.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {isOwner && isLive && (
             <Button onClick={() => endMutation.mutate(poll.id)} disabled={endMutation.isPending}>
-              {endMutation.isPending ? 'Ending...' : 'End Poll'}
+              {endMutation.isPending ? 'Ending...' : 'End Live'}
             </Button>
           )}
         </div>
@@ -209,7 +239,7 @@ export default function LivePoll() {
       <main className="flex-1 flex items-center justify-center p-8">
         <Card className="w-full max-w-2xl">
           <CardHeader>
-            <CardTitle className="text-center">Live Results</CardTitle>
+            <CardTitle className="text-center">{isLive ? 'Live Results' : 'Results'}</CardTitle>
           </CardHeader>
           <CardContent>
             {theme === 'bar' && <BarChart votes={votes} options={poll.options} />}
@@ -218,6 +248,9 @@ export default function LivePoll() {
           </CardContent>
         </Card>
       </main>
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </div>
     </div>
   );
 }

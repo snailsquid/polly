@@ -1,7 +1,4 @@
-import WebSocket, { WebSocketServer } from 'ws';
-import { IncomingMessage } from 'http';
 import { prisma } from '../../db/client';
-import { authenticateClient, isWhitelisted } from './auth';
 import { serverEvents } from '../../events';
 
 interface WSMessage {
@@ -21,80 +18,113 @@ interface PollEndPayload extends AuthPayload {
   pollId: string;
 }
 
+const WHITELIST_USER_IDS = (process.env.WHITELIST_USER_IDS ?? '')
+  .split(',')
+  .map(id => id.trim())
+  .filter(id => id.length > 0);
+
+function isWhitelisted(userId: string): boolean {
+  return WHITELIST_USER_IDS.includes(userId);
+}
+
 export const connectedClients = new Map<string, WebSocket>();
 
-export function setupWSHandlers(wss: WebSocketServer): void {
-  wss.on('connection', (socket: WebSocket, request: IncomingMessage) => {
-    let authenticated = false;
-    let userId: string | null = null;
+// Broadcast to all connected clients
+export function wssBroadcast(message: Record<string, unknown>): void {
+  const data = JSON.stringify(message);
+  for (const [userId, ws] of connectedClients) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    }
+  }
+}
 
-    const send = (type: string, payload: Record<string, unknown>): void => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type, payload }));
-      }
-    };
+// Send to a specific client
+export function wssSend(ws: WebSocket, type: string, payload: Record<string, unknown>): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type, payload }));
+  }
+}
 
-    socket.on('message', async (data: WebSocket.RawData) => {
+// Bun WebSocket handler configuration
+export function setupWSHandler() {
+  const clients = connectedClients;
+
+  return {
+    open(ws: WebSocket) {
+      // Store pending auth state
+      (ws as any)._authenticated = false;
+      (ws as any)._userId = null;
+    },
+
+    message(ws: WebSocket, data: string | Buffer) {
       try {
         const message: WSMessage = JSON.parse(data.toString());
 
         if (message.type === 'auth') {
           const authData = message.payload as unknown as AuthPayload;
-          if (authenticateClient(socket, request, { type: 'auth', payload: authData })) {
-            authenticated = true;
-            userId = authData.userId;
-            connectedClients.set(userId, socket);
-            send('auth:success', { userId });
+          const userId = authData.userId;
+
+          if (!userId || !isWhitelisted(userId)) {
+            wssSend(ws, 'error', { message: 'Unauthorized' });
+            return;
           }
+
+          (ws as any)._authenticated = true;
+          (ws as any)._userId = userId;
+          clients.set(userId, ws);
+          wssSend(ws, 'auth:success', { userId });
           return;
         }
 
-        if (!authenticated || !userId) {
-          send('error', { message: 'Not authenticated' });
+        if (!(ws as any)._authenticated) {
+          wssSend(ws, 'error', { message: 'Not authenticated' });
           return;
         }
+
+        const userId = (ws as any)._userId;
 
         switch (message.type) {
           case 'poll:start': {
             const payload = message.payload as unknown as PollStartPayload;
             if (!isWhitelisted(payload.userId)) {
-              send('error', { message: 'Unauthorized' });
+              wssSend(ws, 'error', { message: 'Unauthorized' });
               return;
             }
-            const poll = await prisma.poll.findUnique({
-              where: { id: payload.pollId },
-              include: { options: true },
-            });
-            if (poll) {
-              serverEvents.emit('poll:start', poll);
-              send('poll:started', { pollId: poll.id });
-            }
+            serverEvents.emit('poll:start', { pollId: payload.pollId });
+            wssSend(ws, 'poll:started', { pollId: payload.pollId });
             break;
           }
 
           case 'poll:end': {
             const payload = message.payload as unknown as PollEndPayload;
             if (!isWhitelisted(payload.userId)) {
-              send('error', { message: 'Unauthorized' });
+              wssSend(ws, 'error', { message: 'Unauthorized' });
               return;
             }
             serverEvents.emit('poll:end', { pollId: payload.pollId });
-            send('poll:ended', { pollId: payload.pollId });
+            wssSend(ws, 'poll:ended', { pollId: payload.pollId });
             break;
           }
 
+          case 'subscribe':
+            // Client subscribes to poll updates — server broadcasts to all clients,
+            // so this is a silent no-op until subscription-based filtering is implemented.
+            break;
+
           default:
-            send('error', { message: `Unknown message type: ${message.type}` });
+            wssSend(ws, 'error', { message: `Unknown message type: ${message.type}` });
         }
       } catch {
-        send('error', { message: 'Invalid message format' });
+        wssSend(ws, 'error', { message: 'Invalid message format' });
       }
-    });
+    },
 
-    socket.on('close', () => {
+    close(ws: WebSocket) {
+      const userId = (ws as any)._userId;
       if (userId) {
-        connectedClients.delete(userId);
+        clients.delete(userId);
       }
-    });
-  });
+    },
+  };
 }

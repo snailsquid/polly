@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getPoll } from '@/lib/api';
-import type { Option } from '@/types';
+import type { Option, PollRun } from '@/types';
 
 const THEMES = ['bar', 'pie', 'number'] as const;
 
@@ -138,11 +138,13 @@ export default function Results() {
   });
 
   const votes: VoteCount[] = useMemo(() => {
+    const endedRuns = poll?.runs?.filter((r: PollRun) => r.status === 'ENDED') || [];
+    const allEndedVotes = endedRuns.flatMap((r: PollRun) => r.votes || []);
     const countMap = new Map<number, number>();
-    poll?.votes.forEach((v) => {
+    allEndedVotes.forEach((v: { option: number }) => {
       countMap.set(v.option, (countMap.get(v.option) || 0) + 1);
     });
-    const total = poll?.votes.length || 0;
+    const total = allEndedVotes.length;
     return (poll?.options || []).map((o) => {
       const count = countMap.get(o.number) || 0;
       return {
@@ -191,7 +193,11 @@ export default function Results() {
       </Card>
 
       <div className="text-center text-sm text-muted-foreground">
-        Total votes: {poll.votes.length}
+        {(() => {
+          const endedRuns = poll?.runs?.filter((r: PollRun) => r.status === 'ENDED') || [];
+          const totalVotes = endedRuns.reduce((sum: number, r: PollRun) => sum + (r._count?.votes || 0), 0);
+          return `Total votes: ${totalVotes}`;
+        })()}
       </div>
 
       <div className="flex justify-center gap-4">

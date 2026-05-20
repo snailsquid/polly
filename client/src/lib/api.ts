@@ -1,4 +1,9 @@
-import type { Poll, ApiError } from '@/types';
+import type { Poll, PollRun, ApiError } from '@/types';
+
+export interface ChannelCheckResult {
+  accessible: boolean;
+  error?: string;
+}
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -46,7 +51,7 @@ export async function getPoll(id: string): Promise<Poll> {
 
 export async function updatePoll(id: string, data: Partial<Poll>): Promise<Poll> {
   const response = await fetch(`${BASE_URL}/api/polls/${id}`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       'x-user-id': getUserId(),
@@ -69,14 +74,14 @@ export async function deletePoll(id: string): Promise<void> {
   }
 }
 
-export async function startPoll(id: string): Promise<Poll> {
+export async function startPoll(id: string): Promise<PollRun> {
   const response = await fetch(`${BASE_URL}/api/polls/${id}/start`, {
     method: 'POST',
     headers: {
       'x-user-id': getUserId(),
     },
   });
-  return handleResponse<Poll>(response);
+  return handleResponse<PollRun>(response);
 }
 
 export async function endPoll(id: string): Promise<Poll> {
@@ -89,14 +94,47 @@ export async function endPoll(id: string): Promise<Poll> {
   return handleResponse<Poll>(response);
 }
 
-export async function importPoll(data: { messageId: string; channelId: string; guildId: string }): Promise<Poll> {
-  const response = await fetch(`${BASE_URL}/api/polls/import`, {
+export async function importPoll(pollId: string): Promise<Poll> {
+  const response = await fetch(`${BASE_URL}/api/polls/${pollId}/import`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-user-id': getUserId(),
     },
-    body: JSON.stringify(data),
   });
   return handleResponse<Poll>(response);
+}
+
+export async function getRuns(pollId: string): Promise<PollRun[]> {
+  const response = await fetch(`${BASE_URL}/api/polls/${pollId}/runs`, {
+    headers: {
+      'x-user-id': getUserId(),
+    },
+  });
+  return handleResponse<PollRun[]>(response);
+}
+
+export async function deleteRun(pollId: string, runId: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/polls/${pollId}/runs/${runId}`, {
+    method: 'DELETE',
+    headers: {
+      'x-user-id': getUserId(),
+    },
+  });
+  if (!response.ok) {
+    const error: ApiError = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw error;
+  }
+}
+
+export async function checkChannel(guildId: string, channelId: string): Promise<ChannelCheckResult> {
+  const response = await fetch(`${BASE_URL}/api/check-channel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-id': getUserId(),
+    },
+    body: JSON.stringify({ guildId, channelId }),
+  });
+  return handleResponse<ChannelCheckResult>(response);
 }

@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/contexts/AuthProvider';
+import { ThemeProvider } from '@/contexts/ThemeProvider';
+import SkipLink from '@/components/skip-link';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { useAuth } from '@/contexts/useAuth';
 import { Toaster } from '@/components/ui/sonner';
 import Login from '@/pages/Login';
@@ -23,7 +26,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   const { userId } = useAuth();
   return (
-    <Routes>
+    <>
+      <SkipLink />
+      <Routes>
       <Route path="/login" element={userId ? <Navigate to="/" replace /> : <Login />} />
       <Route
         path="/"
@@ -65,19 +70,24 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-    </Routes>
+      </Routes>
+    </>
   );
 }
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-          <Toaster />
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AuthProvider>
+            <BrowserRouter>
+              <AppRoutes />
+              <Toaster />
+            </BrowserRouter>
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

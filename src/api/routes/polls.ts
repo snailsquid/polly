@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../db/client';
 import { authMiddleware, writeAuthMiddleware } from '../middleware/auth';
 import { serverEvents } from '../../events';
+import { discordClient } from '../../bot';
 
 const OptionInputSchema = z.object({
   number: z.number().int().min(1).max(9),
@@ -12,8 +13,8 @@ const OptionInputSchema = z.object({
 
 const CreatePollSchema = z.object({
   question: z.string().min(1),
-  channelId: z.string().min(1),
-  guildId: z.string().min(1),
+  channelId: z.string().default(''),
+  guildId: z.string().default(''),
   liveTheme: z.string().default('bar'),
   resultTheme: z.string().default('bar'),
   options: z.array(OptionInputSchema).min(1).max(9),
@@ -30,12 +31,20 @@ const UpdatePollSchema = z.object({
 export function createApiRouter(): Router {
   const router = Router();
 
+  router.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', timestamp: Date.now() });
+  });
+
   router.get('/polls', authMiddleware, async (_req: Request, res: Response) => {
     try {
       const polls = await prisma.poll.findMany({
         include: {
           options: true,
-          votes: true,
+          runs: {
+            include: {
+              votes: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -88,7 +97,11 @@ export function createApiRouter(): Router {
         where: { id: pollId },
         include: {
           options: true,
-          votes: true,
+          runs: {
+            include: {
+              votes: true,
+            },
+          },
         },
       });
 
@@ -127,7 +140,11 @@ export function createApiRouter(): Router {
         },
         include: {
           options: true,
-          votes: true,
+          runs: {
+            include: {
+              votes: true,
+            },
+          },
         },
       });
 
@@ -166,24 +183,39 @@ export function createApiRouter(): Router {
         return;
       }
 
-      if (poll.status === 'LIVE') {
-        res.status(400).json({ error: 'Poll is already live' });
+      const existingLiveRun = await prisma.pollRun.findFirst({
+        where: { pollId, status: 'LIVE' },
+      });
+
+      if (existingLiveRun) {
+        res.status(400).json({ error: 'Poll already has a live run' });
         return;
       }
 
-      const updatedPoll = await prisma.poll.update({
-        where: { id: pollId },
-        data: { status: 'LIVE' },
-        include: {
-          options: true,
-          votes: true,
+      const maxRunResult = await prisma.pollRun.findFirst({
+        where: { pollId },
+        orderBy: { runNumber: 'desc' },
+        select: { runNumber: true },
+      });
+      const nextRunNumber = (maxRunResult?.runNumber ?? 0) + 1;
+
+      const pollRun = await prisma.pollRun.create({
+        data: {
+          pollId,
+          runNumber: nextRunNumber,
+          status: 'LIVE',
         },
       });
 
-      serverEvents.emit('poll:started', { pollId: poll.id });
+      await prisma.poll.update({
+        where: { id: pollId },
+        data: { status: 'LIVE' },
+      });
+
+      serverEvents.emit('poll:started', { pollId: poll.id, runId: pollRun.id });
       serverEvents.emit('poll:update', { pollId: poll.id });
 
-      res.json(updatedPoll);
+      res.status(201).json(pollRun);
     } catch (error) {
       res.status(500).json({ error: 'Failed to start poll' });
     }
@@ -202,25 +234,77 @@ export function createApiRouter(): Router {
         return;
       }
 
-      if (poll.status === 'ENDED') {
-        res.status(400).json({ error: 'Poll has already ended' });
+      const liveRun = await prisma.pollRun.findFirst({
+        where: { pollId, status: 'LIVE' },
+      });
+
+      if (!liveRun) {
+        res.status(400).json({ error: 'No live run to end' });
         return;
       }
 
-      const updatedPoll = await prisma.poll.update({
-        where: { id: pollId },
+      const endedRun = await prisma.pollRun.update({
+        where: { id: liveRun.id },
         data: { status: 'ENDED' },
-        include: {
-          options: true,
-          votes: true,
-        },
       });
 
-      serverEvents.emit('poll:ended', { pollId: poll.id });
+      await prisma.poll.update({
+        where: { id: pollId },
+        data: { status: 'ENDED' },
+      });
 
-      res.json(updatedPoll);
+      serverEvents.emit('poll:ended', { pollId: poll.id, runId: endedRun.id });
+
+      res.json(endedRun);
     } catch (error) {
       res.status(500).json({ error: 'Failed to end poll' });
+    }
+  });
+
+  router.get('/polls/:id/runs', authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const pollId = req.params.id as string;
+      const runs = await prisma.pollRun.findMany({
+        where: { pollId },
+        include: {
+          _count: {
+            select: { votes: true },
+          },
+        },
+        orderBy: { runNumber: 'desc' },
+      });
+
+      res.json(runs);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch runs' });
+    }
+  });
+
+  router.delete('/polls/:id/runs/:runId', writeAuthMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id: pollId, runId } = req.params as { id: string; runId: string };
+
+      const run = await prisma.pollRun.findUnique({
+        where: { id: runId },
+      });
+
+      if (!run || run.pollId !== pollId) {
+        res.status(404).json({ error: 'Run not found' });
+        return;
+      }
+
+      if (run.status === 'LIVE') {
+        res.status(400).json({ error: 'End poll first' });
+        return;
+      }
+
+      await prisma.pollRun.delete({
+        where: { id: runId },
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to delete run' });
     }
   });
 
@@ -265,6 +349,54 @@ export function createApiRouter(): Router {
       res.status(500).json({ error: 'Failed to import poll' });
     }
   });
+
+router.post('/check-channel', writeAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { guildId, channelId } = req.body as { guildId: string; channelId: string };
+
+    if (!guildId || !channelId) {
+      res.status(400).json({ error: ' guildId and channelId are required' });
+      return;
+    }
+
+    try {
+      const guild = await discordClient.guilds.fetch(guildId);
+      const channel = await guild.channels.fetch(channelId);
+
+      if (!channel) {
+        res.json({ accessible: false, error: 'Channel not found' });
+        return;
+      }
+
+      const me = guild.members.me;
+      if (!me) {
+        res.json({ accessible: false, error: 'Bot not in guild' });
+        return;
+      }
+
+      const permissions = channel.permissionsFor(me);
+      if (!permissions || !permissions.has('ViewChannel')) {
+        res.json({ accessible: false, error: 'Bot lacks permission to view channel' });
+        return;
+      }
+
+      res.json({ accessible: true });
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      console.error('Channel check error:', err);
+
+      if (err.code === 'UnknownGuild' || err.message?.includes('Unknown Guild')) {
+        res.json({ accessible: false, error: 'Guild not found or bot not in it' });
+      } else if (err.code === 'UnknownChannel') {
+        res.json({ accessible: false, error: 'Channel not found' });
+      } else {
+        res.json({ accessible: false, error: err.message || 'Failed to check channel' });
+      }
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check channel' });
+  }
+});
 
   return router;
 }

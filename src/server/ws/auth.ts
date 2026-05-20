@@ -1,4 +1,4 @@
-import { WebSocket } from 'ws';
+// Bun provides WebSocket as a global
 import { IncomingMessage } from 'http';
 import { env } from '../../env';
 

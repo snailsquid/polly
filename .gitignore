@@ -58,3 +58,12 @@ secrets/
 *.log
 *.tmp
 .cache/
+
+# Agent/Scratch
+.opencode/
+.playwright-mcp/
+.sisyphus/
+
+# Test artifacts
+client/test-results/
+*.png

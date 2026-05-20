@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Vote } from '@/types';
+import type { Poll } from '@/types';
 
 interface PollStatus {
   pollId: string;
@@ -30,7 +31,7 @@ export function useWebSocket(pollId?: string) {
   sendMessageRef.current = sendMessage;
 
   const connect = () => {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
+    const wsUrl = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -48,13 +49,15 @@ export function useWebSocket(pollId?: string) {
       try {
         const message: WebSocketMessage = JSON.parse(event.data);
         if (message.type === 'poll:update' && message.payload) {
-          const payload = message.payload as { votes?: Vote[]; poll?: PollStatus };
-          if (payload.votes) {
-            setVotes(payload.votes);
+          // Server sends the full Poll object: { id, ..., options, runs: [{ votes }] }
+          const payload = message.payload as Poll;
+          if (payload.runs && payload.runs.length > 0) {
+            const votes = payload.runs[0].votes;
+            if (votes) {
+              setVotes(votes);
+            }
           }
-          if (payload.poll) {
-            setPollStatus(payload.poll);
-          }
+          setPollStatus({ pollId: payload.id, status: payload.status });
         }
         if (message.type === 'poll:status' && message.payload) {
           setPollStatus(message.payload as PollStatus);

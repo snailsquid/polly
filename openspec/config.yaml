@@ -1,0 +1,26 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Bun/TypeScript backend (Discord.js v14 + Express + WebSocket + Prisma) + React 19/Vite frontend (shadcn/ui).
+  Monorepo with client/ package.
+  Server runs two ports: 3000 (HTTP REST API), 8080 (WebSocket).
+  PostgreSQL via Docker (docker-compose.yml).
+  Real-time Discord poll system.
+  No ESLint on server — only tsc checks.
+  Zod v3 on server, Zod v4 on client (version mismatch).
+  Vote parsing: single digit 1-9 only (no multi-digit).
+  Bot connects via DISCORD_BOT_TOKEN env var.
+
+rules:
+  proposal:
+    - Link to specific source files when describing what changes
+    - Include a "Why now?" rationale
+    - List affected capabilities (REST endpoints, WS events, bot handlers, DB schema)
+  design:
+    - Include data flow diagrams for backend changes
+    - Mention WebSocket events if real-time is involved
+    - Reference specific files: bot/handlers/, server/, api/routes/, db/
+  tasks:
+    - Break into hunks that can be implemented atomically
+    - Each task should target specific files or modules
+    - Order tasks by dependency (DB schema first, then API, then frontend)

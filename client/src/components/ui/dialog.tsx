@@ -7,6 +7,18 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selector = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",")
+  return Array.from(container.querySelectorAll<HTMLElement>(selector))
+}
+
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
@@ -43,19 +55,59 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  titleId,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  titleId?: string
 }) {
+  const contentRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (contentRef.current) {
+      const focusable = getFocusableElements(contentRef.current)
+      if (focusable.length > 0) {
+        focusable[0].focus()
+      }
+    }
+  }, [])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Tab" && contentRef.current) {
+      const focusable = getFocusableElements(contentRef.current)
+      if (focusable.length === 0) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+  }
+
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        aria-modal="true"
+        role="dialog"
+        aria-labelledby={titleId}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
+        onKeyDown={handleKeyDown}
+        ref={contentRef}
         {...props}
       >
         {children}

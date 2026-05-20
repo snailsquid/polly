@@ -25,7 +25,20 @@ model Poll {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   options   Option[]
+  runs      PollRun[]
+}
+
+model PollRun {
+  id        String    @id @default(cuid())
+  pollId    String
+  runNumber Int
+  status    PollStatus @default(DRAFT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  poll      Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
   votes     Vote[]
+
+  @@unique([pollId, runNumber])
 }
 
 model Option {
@@ -42,10 +55,10 @@ model Option {
 model Vote {
   id        String   @id @default(cuid())
   pollId    String
+  runId     String
   option    Int
   userId    String
   createdAt DateTime @default(now())
-  poll      Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  run       PollRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
 
-  @@unique([pollId, userId])
 }

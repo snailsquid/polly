@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { createPoll } from '@/lib/api';
+import { createPoll, checkChannel } from '@/lib/api';
+import { createPollSchema } from '@/lib/schemas';
 import { toast } from 'sonner';
 import type { Option } from '@/types';
 
@@ -14,6 +15,11 @@ const THEMES = ['bar', 'pie', 'number'] as const;
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
+}
+
+interface FieldErrors {
+  question?: string;
+  options?: string;
 }
 
 export default function CreatePoll() {
@@ -27,6 +33,10 @@ export default function CreatePoll() {
     { id: generateId(), number: 1, label: '' },
     { id: generateId(), number: 2, label: '' },
   ]);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [channelCheckStatus, setChannelCheckStatus] = useState<'idle' | 'checking' | 'accessible' | 'error'>('idle');
+  const [channelCheckError, setChannelCheckError] = useState<string>('');
 
   const mutation = useMutation({
     mutationFn: createPoll,
@@ -38,6 +48,33 @@ export default function CreatePoll() {
       toast.error((error as { error?: string }).error || 'Failed to create poll');
     },
   });
+
+  const validateForm = useCallback((): boolean => {
+    const validOptions = options.filter((o) => o.label.trim());
+    const result = createPollSchema.safeParse({
+      question,
+      channelId,
+      guildId,
+      liveTheme,
+      resultTheme,
+      options: validOptions.map((o) => ({ label: o.label, number: o.number })),
+    });
+
+    if (!result.success) {
+      const errors: FieldErrors = {};
+      for (const err of result.error.issues) {
+        if (err.path[0] === 'options' && err.path.length === 1) {
+          errors.options = err.message;
+        } else if (err.path[0] === 'question') {
+          errors.question = err.message;
+        }
+      }
+      setFieldErrors(errors);
+      return false;
+    }
+    setFieldErrors({});
+    return true;
+  }, [question, channelId, guildId, liveTheme, resultTheme, options]);
 
   const debouncedSave = useCallback(() => {
     if (question.trim() && options.some((o) => o.label.trim())) {
@@ -61,6 +98,30 @@ export default function CreatePoll() {
     return () => clearTimeout(timer);
   }, [question, debouncedSave]);
 
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (guildId.length >= 18 && channelId.length >= 18) {
+        setChannelCheckStatus('checking');
+        try {
+          const result = await checkChannel(guildId, channelId);
+          setChannelCheckStatus(result.accessible ? 'accessible' : 'error');
+          setChannelCheckError(result.error || '');
+        } catch {
+          setChannelCheckStatus('error');
+          setChannelCheckError('Failed to check channel');
+        }
+      } else {
+        setChannelCheckStatus('idle');
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [guildId, channelId]);
+
+  const handleBlur = (field: string) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+    validateForm();
+  };
+
   const addOption = () => {
     if (options.length < 9) {
       setOptions([...options, { id: generateId(), number: options.length + 1, label: '' }]);
@@ -79,12 +140,8 @@ export default function CreatePoll() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim()) {
-      toast.error('Question is required');
-      return;
-    }
-    if (options.filter((o) => o.label.trim()).length < 2) {
-      toast.error('At least 2 options are required');
+    setTouched({ question: true, options: true });
+    if (!validateForm()) {
       return;
     }
     mutation.mutate({
@@ -97,8 +154,10 @@ export default function CreatePoll() {
     });
   };
 
+  const showError = (field: keyof FieldErrors) => touched[field] && fieldErrors[field];
+
   return (
-    <div className="container mx-auto p-4 max-w-2xl">
+    <div id="main-content" className="container mx-auto p-4 max-w-2xl">
       <h1 className="text-2xl font-bold mb-6">Create Poll</h1>
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
@@ -112,8 +171,12 @@ export default function CreatePoll() {
                 id="question"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
+                onBlur={() => handleBlur('question')}
                 placeholder="What would you like to ask?"
               />
+              {showError('question') && (
+                <p className="text-sm text-destructive">{fieldErrors.question}</p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -124,6 +187,37 @@ export default function CreatePoll() {
                   onChange={(e) => setChannelId(e.target.value)}
                   placeholder="Discord channel ID"
                 />
+                <div className="flex items-center gap-2 min-h-5">
+                  {channelCheckStatus === 'checking' && (
+                    <span className="text-sm text-muted-foreground animate-pulse">Checking access...</span>
+                  )}
+                  {channelCheckStatus === 'accessible' && (
+                    <span className="text-sm text-green-600">✓ Bot has access</span>
+                  )}
+                  {channelCheckStatus === 'error' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-red-600">✗ {channelCheckError}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                          setChannelCheckStatus('checking');
+                          try {
+                            const result = await checkChannel(guildId, channelId);
+                            setChannelCheckStatus(result.accessible ? 'accessible' : 'error');
+                            setChannelCheckError(result.error || '');
+                          } catch {
+                            setChannelCheckStatus('error');
+                            setChannelCheckError('Failed to check channel');
+                          }
+                        }}
+                      >
+                        Check
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="guildId">Guild ID</Label>
@@ -206,6 +300,7 @@ export default function CreatePoll() {
                 <Input
                   value={option.label}
                   onChange={(e) => updateOption(option.id, e.target.value)}
+                  onBlur={() => handleBlur('options')}
                   placeholder={`Option ${index + 1}`}
                   className="flex-1"
                 />
@@ -215,11 +310,15 @@ export default function CreatePoll() {
                   size="icon"
                   onClick={() => removeOption(option.id)}
                   disabled={options.length <= 1}
+                  aria-label={`Remove option ${option.number}`}
                 >
                   ×
                 </Button>
               </div>
             ))}
+            {fieldErrors.options && (
+              <p className="text-sm text-destructive">{fieldErrors.options}</p>
+            )}
             {options.length < 9 && (
               <Button type="button" variant="outline" onClick={addOption}>
                 Add Option

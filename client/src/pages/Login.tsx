@@ -1,22 +1,36 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/useAuth';
 
-export default function Login() {
-  const [inputId, setInputId] = useState('');
-  const navigate = useNavigate();
-  const { setUserId } = useAuth();
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputId.trim()) {
-      setUserId(inputId.trim());
-      navigate('/');
+export default function Login() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { setUserId, setUser } = useAuth();
+
+  useEffect(() => {
+    const userParam = searchParams.get('user');
+    if (userParam) {
+      try {
+        const userData = JSON.parse(decodeURIComponent(userParam)) as {
+          id: string;
+          username: string;
+          avatar: string;
+        };
+        setUserId(userData.id);
+        setUser(userData);
+        navigate('/');
+      } catch {
+        console.error('Failed to parse user data');
+      }
     }
+  }, [searchParams, setUserId, setUser, navigate]);
+
+  const handleDiscordLogin = () => {
+    window.location.href = `${BASE_URL}/api/auth/discord`;
   };
 
   return (
@@ -25,25 +39,13 @@ export default function Login() {
         <CardHeader>
           <CardTitle className="text-2xl text-center">Welcome to Polly</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="discord-id">Discord User ID</Label>
-              <Input
-                id="discord-id"
-                type="text"
-                placeholder="Enter your Discord User ID"
-                value={inputId}
-                onChange={(e) => setInputId(e.target.value)}
-              />
-              <p className="text-sm text-muted-foreground">
-                You can find your Discord User ID by enabling Developer Mode and right-clicking your username.
-              </p>
-            </div>
-            <Button type="submit" className="w-full" disabled={!inputId.trim()}>
-              Continue
-            </Button>
-          </form>
+        <CardContent className="flex flex-col items-center gap-6">
+          <p className="text-muted-foreground text-center">
+            Login with your Discord account to create and manage polls
+          </p>
+          <Button onClick={handleDiscordLogin} size="lg" className="w-full">
+            Login with Discord
+          </Button>
         </CardContent>
       </Card>
     </div>

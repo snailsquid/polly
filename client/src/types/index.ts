@@ -8,9 +8,23 @@ export interface Option {
 export interface Vote {
   id: string;
   pollId: string;
+  runId: string;
   option: number;
   userId: string;
   createdAt: string;
+}
+
+export interface PollRun {
+  id: string;
+  pollId: string;
+  runNumber: number;
+  status: 'DRAFT' | 'LIVE' | 'ENDED';
+  createdAt: string;
+  updatedAt: string;
+  votes?: Vote[];
+  _count?: {
+    votes: number;
+  };
 }
 
 export interface Poll {
@@ -23,7 +37,7 @@ export interface Poll {
   resultTheme: string;
   ownerId: string;
   options: Option[];
-  votes: Vote[];
+  runs: PollRun[];
 }
 
 export interface ApiError {
