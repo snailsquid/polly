@@ -13,6 +13,14 @@ import { toast } from 'sonner';
 import type { Poll, Option } from '@/types';
 
 const THEMES = ['bar', 'pie', 'number'] as const;
+const DURATION_OPTIONS = [
+  { value: '', label: 'No timer' },
+  { value: '15', label: '15s' },
+  { value: '30', label: '30s' },
+  { value: '60', label: '1m' },
+  { value: '120', label: '2m' },
+  { value: '300', label: '5m' },
+];
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
@@ -36,6 +44,7 @@ export default function PollDetail() {
   const [options, setOptions] = useState<Option[]>([]);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [startDuration, setStartDuration] = useState('');
 
   const { data: poll, isLoading } = useQuery({
     queryKey: ['poll', id],
@@ -79,11 +88,14 @@ export default function PollDetail() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () => startPoll(id!),
-    onSuccess: (poll) => {
+    mutationFn: () => {
+      const duration = startDuration ? parseInt(startDuration, 10) : undefined;
+      return startPoll(id!, duration);
+    },
+    onSuccess: (pollRun) => {
       queryClient.invalidateQueries({ queryKey: ['poll', id] });
       toast.success('Poll started');
-      navigate(`/poll/${poll.pollId}/live`);
+      navigate(`/poll/${pollRun.pollId}/live`);
     },
     onError: (error) => {
       toast.error((error as { error?: string }).error || 'Failed to start poll');
@@ -170,7 +182,7 @@ export default function PollDetail() {
     <div id="main-content" className="container mx-auto p-4 max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Edit Poll</h1>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {(() => {
             const hasLiveRun = poll.runs?.some(r => r.status === 'LIVE');
             if (hasLiveRun) {
@@ -180,22 +192,29 @@ export default function PollDetail() {
                 </Button>
               );
             }
-            if (poll.status === 'DRAFT') {
-              return (
+            return (
+              <>
+                <Select value={startDuration} onValueChange={(v: string | null) => setStartDuration(v ?? '')}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue placeholder="Timer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DURATION_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
                   {startMutation.isPending ? 'Starting...' : 'Start Poll'}
                 </Button>
-              );
-            }
-            if (poll.status === 'ENDED') {
-              return (
-                <Button variant="secondary" onClick={() => navigate(`/poll/${poll.id}/results`)}>
-                  View Results
-                </Button>
-              );
-            }
-            return null;
+              </>
+            );
           })()}
+          {poll.status === 'ENDED' && (
+            <Button variant="outline" onClick={() => navigate(`/poll/${poll.id}/results`)}>
+              View Results
+            </Button>
+          )}
         </div>
       </div>
 
@@ -327,6 +346,11 @@ export default function PollDetail() {
                     }`}>
                       {run.status}
                     </span>
+                    {run.duration && (
+                      <span className="text-xs text-muted-foreground">
+                        {run.duration}s timer
+                      </span>
+                    )}
                     {run._count && (
                       <span className="text-sm text-muted-foreground">
                         {run._count.votes} vote{run._count.votes !== 1 ? 's' : ''}

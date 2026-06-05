@@ -41,6 +41,8 @@ export function startServer(): void {
   const httpServer = http.createServer(app);
   httpServer.listen(env.PORT, () => {
     console.log(`HTTP server listening on port ${env.PORT}`);
+    // Auto-end any LIVE polls whose scheduledEnd has passed (server restart recovery)
+    endOverdueLivePolls();
   });
 
   // Event → WS broadcast bridge
@@ -85,4 +87,35 @@ export function startServer(): void {
       wssBroadcast({ type: 'poll:ended', payload: poll });
     }
   });
+}
+
+// On server start, end any LIVE polls whose scheduledEnd has passed (timer recovery)
+async function endOverdueLivePolls(): Promise<void> {
+  try {
+    const overdueRuns = await prisma.pollRun.findMany({
+      where: {
+        status: 'LIVE',
+        scheduledEnd: { lte: new Date() },
+      },
+    });
+
+    for (const run of overdueRuns) {
+      await prisma.pollRun.update({
+        where: { id: run.id },
+        data: { status: 'ENDED' },
+      });
+      await prisma.poll.update({
+        where: { id: run.pollId },
+        data: { status: 'ENDED' },
+      });
+      serverEvents.emit('poll:ended', { pollId: run.pollId });
+      console.log(`Auto-ended overdue poll run ${run.id} (run #${run.runNumber})`);
+    }
+
+    if (overdueRuns.length > 0) {
+      console.log(`Ended ${overdueRuns.length} overdue poll run(s) on server restart`);
+    }
+  } catch (error) {
+    console.error('Failed to auto-end overdue polls:', error);
+  }
 }

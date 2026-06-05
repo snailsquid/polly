@@ -29,14 +29,16 @@ model Poll {
 }
 
 model PollRun {
-  id        String    @id @default(cuid())
-  pollId    String
-  runNumber Int
-  status    PollStatus @default(DRAFT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  poll      Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  votes     Vote[]
+  id           String      @id @default(cuid())
+  pollId       String
+  runNumber    Int
+  status       PollStatus  @default(DRAFT)
+  duration     Int?        @map("duration")
+  scheduledEnd DateTime?   @map("scheduled_end")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  poll         Poll        @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes        Vote[]
 
   @@unique([pollId, runNumber])
 }

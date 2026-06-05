@@ -202,7 +202,7 @@ export default function Results() {
 
       <div className="flex justify-center gap-4">
         <Button variant="outline" onClick={() => navigate('/')}>Back to Home</Button>
-        <Button onClick={() => navigate('/poll/new')}>Start New Poll</Button>
+        <Button onClick={() => navigate(`/poll/${id}`)}>Start Another Run</Button>
       </div>
     </div>
   );

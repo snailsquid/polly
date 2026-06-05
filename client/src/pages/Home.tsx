@@ -78,7 +78,7 @@ export default function Home() {
   });
 
   const startMutation = useMutation({
-    mutationFn: startPoll,
+    mutationFn: (pollId: string, _ctx?: unknown) => startPoll(pollId),
     onMutate: async (pollId) => {
       await queryClient.cancelQueries({ queryKey: ['polls'] });
       const previousPolls = queryClient.getQueryData<Poll[]>(['polls']);
@@ -211,9 +211,14 @@ export default function Home() {
                   }
                   if (poll.status === 'ENDED') {
                     return (
-                      <Button size="sm" variant="secondary" onClick={() => navigate(`/poll/${poll.id}/results`)}>
-                        View Results
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button size="sm" onClick={() => startMutation.mutate(poll.id)}>
+                          Start Another Run
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => navigate(`/poll/${poll.id}/results`)}>
+                          Results
+                        </Button>
+                      </div>
                     );
                   }
                   return null;

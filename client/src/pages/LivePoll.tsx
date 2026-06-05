@@ -17,6 +17,12 @@ interface VoteCount {
   count: number;
 }
 
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function BarChart({ votes, options }: { votes: VoteCount[]; options: Option[] }) {
   const maxVotes = Math.max(...votes.map((v) => v.count), 1);
   return (
@@ -134,10 +140,11 @@ export default function LivePoll() {
   const queryClient = useQueryClient();
   const { userId } = useAuth();
   const [theme, setTheme] = useState('bar');
-  const { votes: wsVotes } = useWebSocket(id);
+  const { votes: wsVotes, pollStatus } = useWebSocket(id);
   const prevVotesRef = useRef<string>('');
   const lastAnnounceRef = useRef<number>(0);
   const [announcement, setAnnouncement] = useState('');
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   const { data: poll, isLoading } = useQuery({
     queryKey: ['poll', id],
@@ -145,8 +152,36 @@ export default function LivePoll() {
     enabled: !!id,
   });
 
+  // Navigate to results when poll is no longer LIVE (auto-ended by timer)
+  useEffect(() => {
+    if (pollStatus && pollStatus.status === 'ENDED' && id) {
+      navigate(`/poll/${id}/results`);
+    }
+  }, [pollStatus, id, navigate]);
+
+  // Countdown timer for timed polls
+  const liveRun = poll?.runs?.find((r: PollRun) => r.status === 'LIVE');
+  useEffect(() => {
+    if (!liveRun?.duration) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const calculate = () => {
+      const elapsed = (Date.now() - new Date(liveRun.createdAt).getTime()) / 1000;
+      const remaining = Math.max(0, Math.ceil((liveRun!.duration ?? 0) - elapsed));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        navigate(`/poll/${id}/results`);
+      }
+    };
+
+    calculate();
+    const interval = setInterval(calculate, 1000);
+    return () => clearInterval(interval);
+  }, [liveRun?.id, liveRun?.duration, liveRun?.createdAt, id, navigate]);
+
   const votes: VoteCount[] = useMemo(() => {
-    const liveRun = poll?.runs?.find((r: PollRun) => r.status === 'LIVE');
     const runVotes = wsVotes.length > 0 ? wsVotes : (liveRun?.votes || []);
     const countMap = new Map<number, number>();
     runVotes.forEach((v: { option: number }) => {
@@ -156,7 +191,7 @@ export default function LivePoll() {
       option: o.number,
       count: countMap.get(o.number) || 0,
     })) || [];
-  }, [wsVotes, poll]);
+  }, [wsVotes, poll, liveRun]);
 
   useEffect(() => {
     const voteKey = votes.map((v) => `${v.option}:${v.count}`).join(',');
@@ -196,7 +231,6 @@ export default function LivePoll() {
   }
 
   const isOwner = poll.ownerId === userId;
-  const liveRun = poll.runs?.find((r: PollRun) => r.status === 'LIVE');
   const isLive = !!liveRun;
 
   return (
@@ -207,8 +241,15 @@ export default function LivePoll() {
             ← Back to Edit
           </Button>
         </div>
-        <div className="flex items-center gap-4 flex-1 justify-center">
+        <div className="flex items-center gap-4 flex-1 justify-center flex-col sm:flex-row">
           <h1 className="text-xl font-bold text-center">{poll.question}</h1>
+          {isLive && timeLeft !== null && (
+            <span className={`font-mono text-sm px-3 py-1 rounded ${
+              timeLeft <= 10 ? 'bg-red-100 text-red-800 animate-pulse' : 'bg-muted text-muted-foreground'
+            }`}>
+              {formatTime(timeLeft)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {!isLive ? (

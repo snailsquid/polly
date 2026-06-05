@@ -19,6 +19,8 @@ export interface PollRun {
   pollId: string;
   runNumber: number;
   status: 'DRAFT' | 'LIVE' | 'ENDED';
+  duration?: number | null;
+  scheduledEnd?: string | null;
   createdAt: string;
   updatedAt: string;
   votes?: Vote[];

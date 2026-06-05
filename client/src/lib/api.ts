@@ -74,12 +74,14 @@ export async function deletePoll(id: string): Promise<void> {
   }
 }
 
-export async function startPoll(id: string): Promise<PollRun> {
+export async function startPoll(id: string, duration?: number): Promise<PollRun> {
   const response = await fetch(`${BASE_URL}/api/polls/${id}/start`, {
     method: 'POST',
     headers: {
+      'Content-Type': 'application/json',
       'x-user-id': getUserId(),
     },
+    body: duration ? JSON.stringify({ duration }) : undefined,
   });
   return handleResponse<PollRun>(response);
 }

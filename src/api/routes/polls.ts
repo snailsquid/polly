@@ -199,11 +199,21 @@ export function createApiRouter(): Router {
       });
       const nextRunNumber = (maxRunResult?.runNumber ?? 0) + 1;
 
+      // Parse optional duration (in seconds) from request body
+      const duration: number | undefined = req.body?.duration
+        ? parseInt(req.body.duration, 10)
+        : undefined;
+      const scheduledEnd = duration && duration > 0
+        ? new Date(Date.now() + duration * 1000)
+        : undefined;
+
       const pollRun = await prisma.pollRun.create({
         data: {
           pollId,
           runNumber: nextRunNumber,
           status: 'LIVE',
+          duration: duration ?? null,
+          scheduledEnd,
         },
       });
 
@@ -214,6 +224,36 @@ export function createApiRouter(): Router {
 
       serverEvents.emit('poll:started', { pollId: poll.id, runId: pollRun.id });
       serverEvents.emit('poll:update', { pollId: poll.id });
+
+      // Schedule auto-end if duration provided
+      if (duration && duration > 0) {
+        setTimeout(async () => {
+          try {
+            // Check there's still a LIVE run (might have been ended manually)
+            const currentPoll = await prisma.poll.findUnique({ where: { id: pollId } });
+            if (!currentPoll || currentPoll.status !== 'LIVE') return;
+
+            const liveRun = await prisma.pollRun.findFirst({
+              where: { pollId, status: 'LIVE' },
+            });
+            if (!liveRun) return;
+
+            await prisma.pollRun.update({
+              where: { id: liveRun.id },
+              data: { status: 'ENDED' },
+            });
+            await prisma.poll.update({
+              where: { id: pollId },
+              data: { status: 'ENDED' },
+            });
+            serverEvents.emit('poll:ended', { pollId });
+            serverEvents.emit('poll:update', { pollId });
+            console.log(`Auto-ended poll ${pollId} (timer expired)`);
+          } catch (err) {
+            console.error('Failed to auto-end poll:', err);
+          }
+        }, duration * 1000);
+      }
 
       res.status(201).json(pollRun);
     } catch (error) {
