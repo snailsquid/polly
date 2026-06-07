@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/useAuth';
 import { toast } from 'sonner';
 import type { Option, PollRun } from '@/types';
 
-const THEMES = ['bar', 'pie', 'number'] as const;
+const THEMES = ['bar', 'pie', 'number', 'tree'] as const;
 
 interface VoteCount {
   option: number;
@@ -130,6 +130,146 @@ function NumberDisplay({ votes, options }: { votes: VoteCount[]; options: Option
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+const TREE_PALETTE = [
+  { trunk: '#854d0e', leaves: '#15803d', bloom: '#4ade80' },
+  { trunk: '#78350f', leaves: '#b45309', bloom: '#fbbf24' },
+  { trunk: '#7f1d1d', leaves: '#be123c', bloom: '#fb7185' },
+  { trunk: '#1e3a8a', leaves: '#1d4ed8', bloom: '#60a5fa' },
+  { trunk: '#4c1d95', leaves: '#6d28d9', bloom: '#c084fc' },
+  { trunk: '#134e4a', leaves: '#0f766e', bloom: '#2dd4bf' },
+  { trunk: '#831843', leaves: '#9d174d', bloom: '#f9a8d4' },
+  { trunk: '#365314', leaves: '#4d7c0f', bloom: '#a3e635' },
+];
+
+interface Branch { x1: number; y1: number; x2: number; y2: number; width: number; level: number; }
+interface Tip { x: number; y: number; r: number; }
+
+function buildTree(cx: number, baseY: number, votes: number): { branches: Branch[]; tips: Tip[]; topY: number } {
+  if (votes === 0) return { branches: [], tips: [], topY: baseY };
+
+  const maxLevel = Math.min(Math.floor(Math.log2(votes + 1)), 5);
+  const trunkH = Math.min(22 + votes * 5.5, 115);
+  const branches: Branch[] = [];
+  const tips: Tip[] = [];
+
+  function grow(x: number, y: number, angle: number, len: number, w: number, level: number) {
+    const ex = x + Math.sin(angle) * len;
+    const ey = y - Math.cos(angle) * len;
+    branches.push({ x1: x, y1: y, x2: ex, y2: ey, width: Math.max(w, 0.8), level });
+    if (level < maxLevel) {
+      const spread = 0.38 + level * 0.07;
+      grow(ex, ey, angle - spread, len * 0.7, w * 0.65, level + 1);
+      grow(ex, ey, angle + spread, len * 0.7, w * 0.65, level + 1);
+    } else {
+      tips.push({ x: ex, y: ey, r: Math.max(9, 18 - maxLevel * 1.5) });
+    }
+  }
+
+  grow(cx, baseY, 0, trunkH, Math.max(2, 9 - maxLevel * 1.2), 0);
+  const topY = tips.length > 0 ? Math.min(...tips.map((t) => t.y)) : baseY - trunkH;
+  return { branches, tips, topY };
+}
+
+function ForestChart({ votes, options }: { votes: VoteCount[]; options: Option[] }) {
+  const maxVotes = Math.max(...votes.map((v) => v.count), 0);
+  const n = votes.length;
+  const svgW = Math.max(400, n * 140);
+  const svgH = 300;
+  const groundY = 228;
+  const treeW = svgW / n;
+
+  return (
+    <div className="w-full overflow-x-auto rounded-lg">
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ minHeight: '220px' }}>
+        <defs>
+          <linearGradient id="fSky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#bfdbfe" />
+            <stop offset="100%" stopColor="#d1fae5" />
+          </linearGradient>
+          <linearGradient id="fGround" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4ade80" />
+            <stop offset="55%" stopColor="#166534" />
+            <stop offset="100%" stopColor="#052e16" />
+          </linearGradient>
+        </defs>
+
+        <rect x="0" y="0" width={svgW} height={svgH} fill="url(#fSky)" rx="8" />
+        <rect x="0" y={groundY} width={svgW} height={svgH - groundY} fill="url(#fGround)" />
+        <line x1="0" y1={groundY} x2={svgW} y2={groundY} stroke="#86efac" strokeWidth="1.5" />
+
+        {votes.map((vote, i) => {
+          const opt = options.find((o) => o.number === vote.option);
+          const cx = treeW * i + treeW / 2;
+          const color = TREE_PALETTE[i % TREE_PALETTE.length];
+          const isLeading = vote.count > 0 && vote.count === maxVotes;
+          const { branches, tips, topY } = buildTree(cx, groundY, vote.count);
+
+          return (
+            <g key={vote.option}>
+              {/* Seedling for 0 votes */}
+              {vote.count === 0 && (
+                <>
+                  <line x1={cx} y1={groundY} x2={cx} y2={groundY - 10}
+                    stroke="#854d0e" strokeWidth="1.5" strokeLinecap="round" />
+                  <ellipse cx={cx - 4} cy={groundY - 12} rx={5} ry={3} fill="#4ade80" opacity={0.9}
+                    transform={`rotate(-30 ${cx - 4} ${groundY - 12})`} />
+                  <ellipse cx={cx + 4} cy={groundY - 13} rx={5} ry={3} fill="#4ade80" opacity={0.9}
+                    transform={`rotate(30 ${cx + 4} ${groundY - 13})`} />
+                </>
+              )}
+
+              {/* Branches */}
+              {branches.map((b, bi) => (
+                <line key={bi}
+                  x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2}
+                  stroke={b.level === 0 ? color.trunk : color.leaves}
+                  strokeWidth={b.width}
+                  strokeLinecap="round"
+                  style={{ transition: 'all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+                />
+              ))}
+
+              {/* Leaf clusters */}
+              {tips.map((tip, ti) => (
+                <g key={ti}>
+                  <circle cx={tip.x} cy={tip.y} r={tip.r}
+                    fill={isLeading ? color.bloom : color.leaves} opacity={0.85}
+                    style={{ transition: 'all 0.55s ease' }} />
+                  <circle cx={tip.x - tip.r * 0.45} cy={tip.y - tip.r * 0.3} r={tip.r * 0.75}
+                    fill={isLeading ? color.bloom : color.leaves} opacity={0.65}
+                    style={{ transition: 'all 0.55s ease' }} />
+                  <circle cx={tip.x + tip.r * 0.45} cy={tip.y - tip.r * 0.3} r={tip.r * 0.75}
+                    fill={isLeading ? color.bloom : color.leaves} opacity={0.65}
+                    style={{ transition: 'all 0.55s ease' }} />
+                </g>
+              ))}
+
+              {/* Crown above leader */}
+              {isLeading && (
+                <text x={cx} y={topY - 6} textAnchor="middle" fontSize="18"
+                  style={{ transition: 'all 0.55s ease' }}>
+                  👑
+                </text>
+              )}
+
+              {/* Label + count below ground */}
+              <text x={cx} y={groundY + 18} textAnchor="middle" fontSize="11"
+                fontWeight={isLeading ? 'bold' : 'normal'}
+                style={{ fill: '#fff', fontFamily: 'inherit' }}>
+                {opt?.label || `Option ${vote.option}`}
+              </text>
+              <text x={cx} y={groundY + 32} textAnchor="middle" fontSize="10"
+                style={{ fill: isLeading ? '#4ade80' : '#86efac', fontFamily: 'inherit' }}>
+                {vote.count} vote{vote.count !== 1 ? 's' : ''}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -286,6 +426,7 @@ export default function LivePoll() {
             {theme === 'bar' && <BarChart votes={votes} options={poll.options} />}
             {theme === 'pie' && <PieChart votes={votes} options={poll.options} />}
             {theme === 'number' && <NumberDisplay votes={votes} options={poll.options} />}
+            {theme === 'tree' && <ForestChart votes={votes} options={poll.options} />}
           </CardContent>
         </Card>
       </main>
