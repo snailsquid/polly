@@ -1,5 +1,5 @@
-// Bun automatically loads .env files via Bun.env
-// For Node.js target, we use process.env directly
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 
 export const env = {
   DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN ?? '',

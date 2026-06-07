@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y gcc g++ make
 
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock* ./
 RUN bun install
 
 COPY . .

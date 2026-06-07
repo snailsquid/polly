@@ -17,7 +17,7 @@ function generateCode(): string {
 const OptionInputSchema = z.object({
   number: z.number().int().min(1).max(9),
   label: z.string().min(1),
-  image: z.string().optional(),
+  image: z.string().nullable().optional(),
 });
 
 const CreatePollSchema = z.object({
@@ -118,7 +118,7 @@ export function createApiRouter(): Router {
         guildId: poll.guildId,
         liveTheme: poll.liveTheme,
         resultTheme: poll.resultTheme,
-        options: poll.options.map((o) => ({ number: o.number, label: o.label, image: o.image })),
+        options: poll.options.map((o) => ({ number: o.number, label: o.label, ...(o.image ? { image: o.image } : {}) })),
       });
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch poll by code' });
@@ -165,22 +165,36 @@ export function createApiRouter(): Router {
         return;
       }
 
-      const poll = await prisma.poll.update({
-        where: { id: pollId },
-        data: {
-          question: data.question,
-          liveTheme: data.liveTheme,
-          resultTheme: data.resultTheme,
-          status: data.status,
-        },
-        include: {
-          options: true,
-          runs: {
-            include: {
-              votes: true,
-            },
+      const poll = await prisma.$transaction(async (tx) => {
+        await tx.poll.update({
+          where: { id: pollId },
+          data: {
+            question: data.question,
+            liveTheme: data.liveTheme,
+            resultTheme: data.resultTheme,
+            status: data.status,
           },
-        },
+        });
+
+        if (data.options) {
+          await tx.option.deleteMany({ where: { pollId } });
+          await tx.option.createMany({
+            data: data.options.map((opt) => ({
+              pollId,
+              number: opt.number,
+              label: opt.label,
+              image: opt.image ?? null,
+            })),
+          });
+        }
+
+        return tx.poll.findUnique({
+          where: { id: pollId },
+          include: {
+            options: true,
+            runs: { include: { votes: true } },
+          },
+        });
       });
 
       res.json(poll);

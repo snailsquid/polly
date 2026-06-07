@@ -148,43 +148,122 @@ const TREE_PALETTE = [
 interface Branch { x1: number; y1: number; x2: number; y2: number; width: number; level: number; }
 interface Tip { x: number; y: number; r: number; }
 
-function buildTree(cx: number, baseY: number, votes: number): { branches: Branch[]; tips: Tip[]; topY: number } {
-  if (votes === 0) return { branches: [], tips: [], topY: baseY };
+function buildTree(cx: number, groundY: number, votes: number, seed: number = 0): { branches: Branch[]; tips: Tip[]; topY: number } {
+  if (votes === 0) return { branches: [], tips: [], topY: groundY - 8 };
 
-  const maxLevel = Math.min(Math.floor(Math.log2(votes + 1)), 5);
-  const trunkH = Math.min(22 + votes * 5.5, 115);
+  // Seeded LCG — stable per-tree randomness, no re-randomization on re-render
+  let s = (seed * 1664525 + 1013904223) >>> 0;
+  const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967295; };
+
+  // Rapid early growth (sprout phase), then steady upward growth
+  const trunkH = votes <= 5
+    ? votes * 17
+    : Math.min(85 + (votes - 5) * 6, 190);
+
+  // Thick central trunk — the main character
+  const trunkW = Math.min(2 + votes * 0.55, 12);
+
   const branches: Branch[] = [];
   const tips: Tip[] = [];
 
-  function grow(x: number, y: number, angle: number, len: number, w: number, level: number) {
-    const ex = x + Math.sin(angle) * len;
-    const ey = y - Math.cos(angle) * len;
-    branches.push({ x1: x, y1: y, x2: ex, y2: ey, width: Math.max(w, 0.8), level });
-    if (level < maxLevel) {
-      const spread = 0.38 + level * 0.07;
-      grow(ex, ey, angle - spread, len * 0.7, w * 0.65, level + 1);
-      grow(ex, ey, angle + spread, len * 0.7, w * 0.65, level + 1);
-    } else {
-      tips.push({ x: ex, y: ey, r: Math.max(9, 18 - maxLevel * 1.5) });
+  // The one big trunk — straight up
+  branches.push({ x1: cx, y1: groundY, x2: cx, y2: groundY - trunkH, width: trunkW, level: 0 });
+
+  // Side branches: each branch is a single independent arm on one random side
+  if (votes >= 3) {
+    const numBranches = Math.min(1 + Math.floor(votes / 2), 7);
+    const usedH: number[] = [];
+
+    const addBranch = (bY: number, baseBLen: number, bW: number, dir: number) => {
+      const bLen = baseBLen * (0.80 + rng() * 0.40);
+      const ex = cx + dir * bLen * (0.78 + (rng() - 0.5) * 0.24);
+      const ey = bY - bLen * (0.38 + (rng() - 0.5) * 0.22);
+      branches.push({ x1: cx, y1: bY, x2: ex, y2: ey, width: bW, level: 1 });
+
+      // ~30% chance: fork into 2 sub-branches; leaves live on sub-branches, not main tip
+      if (rng() < 0.30 && bLen > 9) {
+        const subW = Math.max(bW * 0.55, 0.5);
+        // sub 1 — continues mostly outward
+        const s1Len = bLen * (0.35 + rng() * 0.28);
+        const s1x = ex + dir * s1Len * (0.55 + rng() * 0.38);
+        const s1y = ey - s1Len * (0.50 + rng() * 0.38);
+        branches.push({ x1: ex, y1: ey, x2: s1x, y2: s1y, width: subW, level: 2 });
+        const r1 = Math.min(Math.max(2.5, s1Len * 0.28), 5.5) * (0.75 + rng() * 0.50);
+        tips.push({ x: s1x, y: s1y - r1 * 0.2, r: r1 });
+        // sub 2 — veers more upward
+        const s2Len = bLen * (0.35 + rng() * 0.28);
+        const s2x = ex + dir * s2Len * (0.12 + rng() * 0.28);
+        const s2y = ey - s2Len * (0.68 + rng() * 0.28);
+        branches.push({ x1: ex, y1: ey, x2: s2x, y2: s2y, width: subW, level: 2 });
+        const r2 = Math.min(Math.max(2.5, s2Len * 0.28), 5.5) * (0.75 + rng() * 0.50);
+        tips.push({ x: s2x, y: s2y - r2 * 0.2, r: r2 });
+      } else {
+        // No fork: leaf sits at the main branch tip
+        const leafR = Math.min(Math.max(3.5, bLen * 0.27), 7) * (0.75 + rng() * 0.50);
+        tips.push({ x: ex, y: ey - leafR * 0.2, r: leafR });
+      }
+    };
+
+    for (let i = 0; i < numBranches; i++) {
+      let hFrac = 0.14 + rng() * 0.64;
+      let tries = 0;
+      while (tries++ < 8 && usedH.some(h => Math.abs(h - hFrac) < 0.11)) {
+        hFrac = 0.14 + rng() * 0.64;
+      }
+      if (hFrac > 0.85) continue;
+      usedH.push(hFrac);
+
+      const bY = groundY - trunkH * hFrac;
+      const spreadRatio = votes <= 8
+        ? Math.max(0.28 - i * 0.025, 0.10)
+        : Math.max(0.18 - i * 0.018, 0.07);
+      const baseBLen = Math.min(trunkH * spreadRatio, 20);
+      const bW = Math.max(trunkW * (0.22 + rng() * 0.10), 0.75);
+      addBranch(bY, baseBLen, bW, rng() < 0.5 ? -1 : 1);
     }
   }
 
-  grow(cx, baseY, 0, trunkH, Math.max(2, 9 - maxLevel * 1.2), 0);
-  const topY = tips.length > 0 ? Math.min(...tips.map((t) => t.y)) : baseY - trunkH;
+  // Leaf canopy crown at top of trunk
+  const topTrunkY = groundY - trunkH;
+  const canopyR = Math.min(8 + votes * 1.4, 38);
+
+  tips.push({ x: cx, y: topTrunkY - canopyR * 0.35, r: canopyR });
+  if (votes >= 4) {
+    tips.push({ x: cx - canopyR * 0.55, y: topTrunkY + canopyR * 0.1, r: canopyR * 0.65 });
+    tips.push({ x: cx + canopyR * 0.55, y: topTrunkY + canopyR * 0.1, r: canopyR * 0.65 });
+  }
+  if (votes >= 12) {
+    tips.push({ x: cx - canopyR * 0.25, y: topTrunkY - canopyR * 0.88, r: canopyR * 0.5 });
+    tips.push({ x: cx + canopyR * 0.25, y: topTrunkY - canopyR * 0.88, r: canopyR * 0.5 });
+  }
+
+  const topY = topTrunkY - canopyR * (votes >= 12 ? 1.45 : 1.0) - 4;
   return { branches, tips, topY };
+}
+
+function treeHeightNeeded(votes: number): number {
+  if (votes === 0) return 14;
+  const trunkH = votes <= 5 ? votes * 17 : Math.min(85 + (votes - 5) * 6, 190);
+  const canopyR = Math.min(8 + votes * 1.4, 38);
+  return trunkH + canopyR * (votes >= 12 ? 1.5 : 1.1) + 10;
 }
 
 function ForestChart({ votes, options }: { votes: VoteCount[]; options: Option[] }) {
   const maxVotes = Math.max(...votes.map((v) => v.count), 0);
   const n = votes.length;
-  const svgW = Math.max(400, n * 140);
-  const svgH = 300;
-  const groundY = 228;
-  const treeW = svgW / n;
+  const treeSpacing = Math.max(110, Math.min(180, 700 / n));
+  const svgW = Math.max(400, n * treeSpacing);
+
+  // Dynamic height: always fits the tallest tree
+  const maxTreeH = Math.max(...votes.map((v) => treeHeightNeeded(v.count)), 30);
+  const groundH = 52;
+  const topPad = 22;
+  const svgH = maxTreeH + groundH + topPad;
+  const groundY = svgH - groundH;
 
   return (
     <div className="w-full overflow-x-auto rounded-lg">
-      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ minHeight: '220px' }}>
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ minHeight: '160px' }}>
         <defs>
           <linearGradient id="fSky" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#bfdbfe" />
@@ -203,66 +282,55 @@ function ForestChart({ votes, options }: { votes: VoteCount[]; options: Option[]
 
         {votes.map((vote, i) => {
           const opt = options.find((o) => o.number === vote.option);
-          const cx = treeW * i + treeW / 2;
+          const cx = treeSpacing * i + treeSpacing / 2;
           const color = TREE_PALETTE[i % TREE_PALETTE.length];
           const isLeading = vote.count > 0 && vote.count === maxVotes;
-          const { branches, tips, topY } = buildTree(cx, groundY, vote.count);
+          const { branches, tips, topY } = buildTree(cx, groundY, vote.count, i);
 
           return (
             <g key={vote.option}>
-              {/* Seedling for 0 votes */}
+              {/* Seed for 0 votes */}
               {vote.count === 0 && (
-                <>
-                  <line x1={cx} y1={groundY} x2={cx} y2={groundY - 10}
-                    stroke="#854d0e" strokeWidth="1.5" strokeLinecap="round" />
-                  <ellipse cx={cx - 4} cy={groundY - 12} rx={5} ry={3} fill="#4ade80" opacity={0.9}
-                    transform={`rotate(-30 ${cx - 4} ${groundY - 12})`} />
-                  <ellipse cx={cx + 4} cy={groundY - 13} rx={5} ry={3} fill="#4ade80" opacity={0.9}
-                    transform={`rotate(30 ${cx + 4} ${groundY - 13})`} />
-                </>
+                <ellipse cx={cx} cy={groundY - 4} rx={6} ry={4}
+                  fill="#854d0e" opacity={0.75} />
               )}
 
-              {/* Branches */}
+              {/* Trunk + side branches */}
               {branches.map((b, bi) => (
                 <line key={bi}
                   x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2}
-                  stroke={b.level === 0 ? color.trunk : color.leaves}
+                  stroke={color.trunk}
                   strokeWidth={b.width}
                   strokeLinecap="round"
                   style={{ transition: 'all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
                 />
               ))}
 
-              {/* Leaf clusters */}
+              {/* Leaf canopy blobs */}
               {tips.map((tip, ti) => (
-                <g key={ti}>
-                  <circle cx={tip.x} cy={tip.y} r={tip.r}
-                    fill={isLeading ? color.bloom : color.leaves} opacity={0.85}
-                    style={{ transition: 'all 0.55s ease' }} />
-                  <circle cx={tip.x - tip.r * 0.45} cy={tip.y - tip.r * 0.3} r={tip.r * 0.75}
-                    fill={isLeading ? color.bloom : color.leaves} opacity={0.65}
-                    style={{ transition: 'all 0.55s ease' }} />
-                  <circle cx={tip.x + tip.r * 0.45} cy={tip.y - tip.r * 0.3} r={tip.r * 0.75}
-                    fill={isLeading ? color.bloom : color.leaves} opacity={0.65}
-                    style={{ transition: 'all 0.55s ease' }} />
-                </g>
+                <circle key={ti}
+                  cx={tip.x} cy={tip.y} r={tip.r}
+                  fill={isLeading ? color.bloom : color.leaves}
+                  opacity={0.88}
+                  style={{ transition: 'all 0.55s ease' }}
+                />
               ))}
 
               {/* Crown above leader */}
               {isLeading && (
-                <text x={cx} y={topY - 6} textAnchor="middle" fontSize="18"
+                <text x={cx} y={topY - 4} textAnchor="middle" fontSize="16"
                   style={{ transition: 'all 0.55s ease' }}>
                   👑
                 </text>
               )}
 
               {/* Label + count below ground */}
-              <text x={cx} y={groundY + 18} textAnchor="middle" fontSize="11"
+              <text x={cx} y={groundY + 17} textAnchor="middle" fontSize="11"
                 fontWeight={isLeading ? 'bold' : 'normal'}
                 style={{ fill: '#fff', fontFamily: 'inherit' }}>
                 {opt?.label || `Option ${vote.option}`}
               </text>
-              <text x={cx} y={groundY + 32} textAnchor="middle" fontSize="10"
+              <text x={cx} y={groundY + 31} textAnchor="middle" fontSize="10"
                 style={{ fill: isLeading ? '#4ade80' : '#86efac', fontFamily: 'inherit' }}>
                 {vote.count} vote{vote.count !== 1 ? 's' : ''}
               </text>
