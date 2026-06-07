@@ -22,6 +22,7 @@ model Poll {
   liveTheme String    @default("bar")
   resultTheme String  @default("bar")
   ownerId   String
+  shareCode String?   @unique
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   options   Option[]

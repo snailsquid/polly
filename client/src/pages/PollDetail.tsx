@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getPoll, updatePoll, deletePoll, startPoll, endPoll, deleteRun } from '@/lib/api';
+import { getPoll, updatePoll, deletePoll, startPoll, endPoll, deleteRun, generateShareCode } from '@/lib/api';
 import { updatePollSchema } from '@/lib/schemas';
 import { useAuth } from '@/contexts/useAuth';
 import { toast } from 'sonner';
@@ -24,6 +24,25 @@ const DURATION_OPTIONS = [
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
+}
+
+function writeToClipboard(text: string): void {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => execCopy(text));
+  } else {
+    execCopy(text);
+  }
+}
+
+function execCopy(text: string): void {
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
 }
 
 interface FieldErrors {
@@ -99,6 +118,18 @@ export default function PollDetail() {
     },
     onError: (error) => {
       toast.error((error as { error?: string }).error || 'Failed to start poll');
+    },
+  });
+
+  const shareCodeMutation = useMutation({
+    mutationFn: () => generateShareCode(poll!.id),
+    onSuccess: ({ shareCode: code }) => {
+      queryClient.setQueryData<Poll>(['poll', id], (old) => old ? { ...old, shareCode: code } : old);
+      writeToClipboard(code);
+      toast.success(`Code copied: ${code}`);
+    },
+    onError: () => {
+      toast.error('Failed to generate share code');
     },
   });
 
@@ -266,7 +297,7 @@ export default function PollDetail() {
         <CardContent className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Live Theme</Label>
-            <Select value={liveTheme} onValueChange={(v) => v && setLiveTheme(v)} disabled={!isOwner}>
+            <Select value={liveTheme} onValueChange={(v) => { if (v) { setLiveTheme(v); updateMutation.mutate({ liveTheme: v }); } }} disabled={!isOwner}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -281,7 +312,7 @@ export default function PollDetail() {
           </div>
           <div className="space-y-2">
             <Label>Result Theme</Label>
-            <Select value={resultTheme} onValueChange={(v) => v && setResultTheme(v)} disabled={!isOwner}>
+            <Select value={resultTheme} onValueChange={(v) => { if (v) { setResultTheme(v); updateMutation.mutate({ resultTheme: v }); } }} disabled={!isOwner}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -416,9 +447,25 @@ export default function PollDetail() {
           >
             {deleteMutation.isPending ? 'Deleting...' : 'Delete Poll'}
           </Button>
-          <Button variant="outline" onClick={() => navigate('/')}>
-            Back
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={shareCodeMutation.isPending}
+              onClick={() => {
+                if (poll.shareCode) {
+                  writeToClipboard(poll.shareCode);
+                  toast.success(`Code copied: ${poll.shareCode}`);
+                } else {
+                  shareCodeMutation.mutate();
+                }
+              }}
+            >
+              {shareCodeMutation.isPending ? 'Generating...' : 'Copy code'}
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/')}>
+              Back
+            </Button>
+          </div>
         </div>
       )}
     </div>

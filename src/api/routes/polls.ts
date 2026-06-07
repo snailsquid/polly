@@ -5,6 +5,15 @@ import { authMiddleware, writeAuthMiddleware } from '../middleware/auth';
 import { serverEvents } from '../../events';
 import { discordClient } from '../../bot';
 
+const SHARE_CODE_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyz';
+function generateCode(): string {
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += SHARE_CODE_ALPHABET[Math.floor(Math.random() * SHARE_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
 const OptionInputSchema = z.object({
   number: z.number().int().min(1).max(9),
   label: z.string().min(1),
@@ -87,6 +96,32 @@ export function createApiRouter(): Router {
         return;
       }
       res.status(500).json({ error: 'Failed to create poll' });
+    }
+  });
+
+  router.get('/polls/by-code/:code', authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const code = req.params.code as string;
+      const poll = await prisma.poll.findUnique({
+        where: { shareCode: code },
+        include: { options: true },
+      });
+
+      if (!poll) {
+        res.status(404).json({ error: 'Poll not found' });
+        return;
+      }
+
+      res.json({
+        question: poll.question,
+        channelId: poll.channelId,
+        guildId: poll.guildId,
+        liveTheme: poll.liveTheme,
+        resultTheme: poll.resultTheme,
+        options: poll.options.map((o) => ({ number: o.number, label: o.label, image: o.image })),
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch poll by code' });
     }
   });
 
@@ -345,6 +380,43 @@ export function createApiRouter(): Router {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: 'Failed to delete run' });
+    }
+  });
+
+  router.post('/polls/:id/share-code', writeAuthMiddleware, async (req: Request, res: Response) => {
+    try {
+      const pollId = req.params.id as string;
+      const existing = await prisma.poll.findUnique({ where: { id: pollId }, select: { id: true, shareCode: true } });
+
+      if (!existing) {
+        res.status(404).json({ error: 'Poll not found' });
+        return;
+      }
+
+      if (existing.shareCode) {
+        res.json({ shareCode: existing.shareCode });
+        return;
+      }
+
+      let shareCode: string | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = generateCode();
+        const conflict = await prisma.poll.findUnique({ where: { shareCode: candidate }, select: { id: true } });
+        if (!conflict) {
+          shareCode = candidate;
+          break;
+        }
+      }
+
+      if (!shareCode) {
+        res.status(500).json({ error: 'Failed to generate unique share code' });
+        return;
+      }
+
+      await prisma.poll.update({ where: { id: pollId }, data: { shareCode } });
+      res.json({ shareCode });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to generate share code' });
     }
   });
 

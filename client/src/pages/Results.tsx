@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getPoll } from '@/lib/api';
+import { getPoll, startPoll } from '@/lib/api';
+import { useAuth } from '@/contexts/useAuth';
+import { toast } from 'sonner';
 import type { Option, PollRun } from '@/types';
 
 const THEMES = ['bar', 'pie', 'number'] as const;
@@ -129,7 +131,10 @@ function NumberDisplay({ votes, options }: { votes: VoteCount[]; options: Option
 export default function Results() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { userId } = useAuth();
   const [theme, setTheme] = useState('bar');
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const { data: poll, isLoading } = useQuery({
     queryKey: ['poll', id],
@@ -137,14 +142,29 @@ export default function Results() {
     enabled: !!id,
   });
 
+  const endedRuns = useMemo(
+    () => (poll?.runs || []).filter((r: PollRun) => r.status === 'ENDED').sort((a, b) => b.runNumber - a.runNumber),
+    [poll]
+  );
+
+  useEffect(() => {
+    if (endedRuns.length > 0 && !selectedRunId) {
+      setSelectedRunId(endedRuns[0].id);
+    }
+  }, [endedRuns, selectedRunId]);
+
+  const selectedRun = useMemo(
+    () => endedRuns.find((r) => r.id === selectedRunId) ?? endedRuns[0] ?? null,
+    [endedRuns, selectedRunId]
+  );
+
   const votes: VoteCount[] = useMemo(() => {
-    const endedRuns = poll?.runs?.filter((r: PollRun) => r.status === 'ENDED') || [];
-    const allEndedVotes = endedRuns.flatMap((r: PollRun) => r.votes || []);
+    const runVotes = selectedRun?.votes || [];
     const countMap = new Map<number, number>();
-    allEndedVotes.forEach((v: { option: number }) => {
+    runVotes.forEach((v: { option: number }) => {
       countMap.set(v.option, (countMap.get(v.option) || 0) + 1);
     });
-    const total = allEndedVotes.length;
+    const total = runVotes.length;
     return (poll?.options || []).map((o) => {
       const count = countMap.get(o.number) || 0;
       return {
@@ -153,7 +173,19 @@ export default function Results() {
         percentage: total > 0 ? (count / total) * 100 : 0,
       };
     });
-  }, [poll]);
+  }, [poll, selectedRun]);
+
+  const startMutation = useMutation({
+    mutationFn: () => startPoll(id!),
+    onSuccess: (pollRun) => {
+      queryClient.invalidateQueries({ queryKey: ['poll', id] });
+      toast.success('Poll started');
+      navigate(`/poll/${pollRun.pollId}/live`);
+    },
+    onError: (error) => {
+      toast.error((error as { error?: string }).error || 'Failed to start poll');
+    },
+  });
 
   if (isLoading) {
     return <div className="text-center py-8">Loading...</div>;
@@ -162,6 +194,10 @@ export default function Results() {
   if (!poll) {
     return <div className="text-center py-8">Poll not found</div>;
   }
+
+  const isOwner = poll.ownerId === userId;
+  const hasLiveRun = poll.runs?.some((r: PollRun) => r.status === 'LIVE');
+  const totalVotes = selectedRun?.votes?.length ?? 0;
 
   return (
     <div className="container mx-auto p-4 max-w-3xl space-y-6">
@@ -181,6 +217,24 @@ export default function Results() {
         </Select>
       </div>
 
+      {endedRuns.length >= 2 && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">Run:</span>
+          <Select value={selectedRunId ?? ''} onValueChange={(v) => v && setSelectedRunId(v)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {endedRuns.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  Run {r.runNumber}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-center">Final Results</CardTitle>
@@ -193,16 +247,16 @@ export default function Results() {
       </Card>
 
       <div className="text-center text-sm text-muted-foreground">
-        {(() => {
-          const endedRuns = poll?.runs?.filter((r: PollRun) => r.status === 'ENDED') || [];
-          const totalVotes = endedRuns.reduce((sum: number, r: PollRun) => sum + (r._count?.votes || 0), 0);
-          return `Total votes: ${totalVotes}`;
-        })()}
+        Total votes: {totalVotes}
       </div>
 
       <div className="flex justify-center gap-4">
         <Button variant="outline" onClick={() => navigate('/')}>Back to Home</Button>
-        <Button onClick={() => navigate(`/poll/${id}`)}>Start Another Run</Button>
+        {isOwner && !hasLiveRun && (
+          <Button onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
+            {startMutation.isPending ? 'Starting...' : 'Start Another Run'}
+          </Button>
+        )}
       </div>
     </div>
   );

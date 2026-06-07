@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createPoll, checkChannel } from '@/lib/api';
 import { createPollSchema } from '@/lib/schemas';
 import { toast } from 'sonner';
-import type { Option } from '@/types';
+import type { Option, PollTemplate } from '@/types';
 
 const THEMES = ['bar', 'pie', 'number'] as const;
 
@@ -24,15 +24,20 @@ interface FieldErrors {
 
 export default function CreatePoll() {
   const navigate = useNavigate();
-  const [question, setQuestion] = useState('');
-  const [channelId, setChannelId] = useState('');
-  const [guildId, setGuildId] = useState('');
-  const [liveTheme, setLiveTheme] = useState<string>('bar');
-  const [resultTheme, setResultTheme] = useState<string>('bar');
-  const [options, setOptions] = useState<Option[]>([
-    { id: generateId(), number: 1, label: '' },
-    { id: generateId(), number: 2, label: '' },
-  ]);
+  const location = useLocation();
+  const prefill = (location.state as { prefill?: PollTemplate } | null)?.prefill;
+
+  const [question, setQuestion] = useState(prefill?.question ?? '');
+  const [channelId, setChannelId] = useState(prefill?.channelId ?? '');
+  const [guildId, setGuildId] = useState(prefill?.guildId ?? '');
+  const [liveTheme, setLiveTheme] = useState<string>(prefill?.liveTheme ?? 'bar');
+  const [resultTheme, setResultTheme] = useState<string>(prefill?.resultTheme ?? 'bar');
+  const [options, setOptions] = useState<Option[]>(
+    prefill?.options?.map((o) => ({ id: generateId(), number: o.number, label: o.label, image: o.image })) ?? [
+      { id: generateId(), number: 1, label: '' },
+      { id: generateId(), number: 2, label: '' },
+    ]
+  );
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [channelCheckStatus, setChannelCheckStatus] = useState<'idle' | 'checking' | 'accessible' | 'error'>('idle');

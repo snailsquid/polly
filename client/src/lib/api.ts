@@ -1,4 +1,4 @@
-import type { Poll, PollRun, ApiError } from '@/types';
+import type { Poll, PollRun, PollTemplate, ApiError } from '@/types';
 
 export interface ChannelCheckResult {
   accessible: boolean;
@@ -127,6 +127,25 @@ export async function deleteRun(pollId: string, runId: string): Promise<void> {
     const error: ApiError = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw error;
   }
+}
+
+export async function generateShareCode(pollId: string): Promise<{ shareCode: string }> {
+  const response = await fetch(`${BASE_URL}/api/polls/${pollId}/share-code`, {
+    method: 'POST',
+    headers: {
+      'x-user-id': getUserId(),
+    },
+  });
+  return handleResponse<{ shareCode: string }>(response);
+}
+
+export async function getPollByCode(code: string): Promise<PollTemplate> {
+  const response = await fetch(`${BASE_URL}/api/polls/by-code/${code}`, {
+    headers: {
+      'x-user-id': getUserId(),
+    },
+  });
+  return handleResponse<PollTemplate>(response);
 }
 
 export async function checkChannel(guildId: string, channelId: string): Promise<ChannelCheckResult> {

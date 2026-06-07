@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-      - "8080:8080"
+      - "6769:6769"
     environment:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/polly
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
@@ -13,7 +13,7 @@ services:
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
-      - WS_PORT=8080
+      - WS_PORT=6769
       - PORT=3000
       - WHITELIST_USER_IDS=${WHITELIST_USER_IDS}
     depends_on:

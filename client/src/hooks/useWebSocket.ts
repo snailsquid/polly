@@ -52,10 +52,9 @@ export function useWebSocket(pollId?: string) {
           // Server sends the full Poll object: { id, ..., options, runs: [{ votes }] }
           const payload = message.payload as Poll;
           if (payload.runs && payload.runs.length > 0) {
-            const votes = payload.runs[0].votes;
-            if (votes) {
-              setVotes(votes);
-            }
+            const liveRun = payload.runs.find((r) => r.status === 'LIVE');
+            const votes = liveRun?.votes ?? [];
+            setVotes(votes);
           }
           setPollStatus({ pollId: payload.id, status: payload.status });
         }

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
-import { getPolls, startPoll, importPoll, deletePoll } from '@/lib/api';
+import { getPolls, startPoll, getPollByCode, deletePoll } from '@/lib/api';
 import { UserMenu } from '@/components/user-menu';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/contexts/useAuth';
@@ -47,30 +47,34 @@ function HomeSkeleton() {
 export default function Home() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [importOpen, setImportOpen] = useState(false);
-  const [importPollId, setImportPollId] = useState('');
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [shareCode, setShareCode] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [codeLoading, setCodeLoading] = useState(false);
   const { isDark, toggleTheme } = useTheme();
   const { logout } = useAuth();
-  const importButtonRef = useRef<HTMLButtonElement>(null);
-  const importTitleId = useId();
+  const codeButtonRef = useRef<HTMLButtonElement>(null);
+  const codeTitleId = useId();
 
-  const handleImportOpenChange = (open: boolean) => {
-    setImportOpen(open);
+  const handleCodeOpenChange = (open: boolean) => {
+    setCodeOpen(open);
     if (!open) {
-      setTimeout(() => importButtonRef.current?.focus(), 0);
+      setShareCode('');
+      setCodeError('');
+      setTimeout(() => codeButtonRef.current?.focus(), 0);
     }
   };
 
   useEffect(() => {
-    if (!importOpen) return;
+    if (!codeOpen) return;
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setImportOpen(false);
+        setCodeOpen(false);
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [importOpen]);
+  }, [codeOpen]);
 
   const { data: polls, isLoading } = useQuery({
     queryKey: ['polls'],
@@ -101,20 +105,25 @@ export default function Home() {
     },
   });
 
-  const importMutation = useMutation({
-    mutationFn: (pollId: string) => importPoll(pollId),
-    onSuccess: (poll) => {
-      queryClient.invalidateQueries({ queryKey: ['polls'] });
-      setImportOpen(false);
-      setImportPollId('');
-      toast.success('Poll imported');
-      navigate(`/poll/${poll.id}`);
-    },
-    onError: (error) => {
-      queryClient.invalidateQueries({ queryKey: ['polls'] });
-      toast.error((error as { error?: string }).error || 'Failed to import poll');
-    },
-  });
+  const handleCodeSubmit = async () => {
+    if (!shareCode.trim()) return;
+    setCodeError('');
+    setCodeLoading(true);
+    try {
+      const config = await getPollByCode(shareCode.trim());
+      setCodeOpen(false);
+      navigate('/poll/new', { state: { prefill: config } });
+    } catch (err) {
+      const apiErr = err as { error?: string };
+      if (apiErr.error === 'Poll not found') {
+        setCodeError('Code not found');
+      } else {
+        setCodeError('Failed to look up code');
+      }
+    } finally {
+      setCodeLoading(false);
+    }
+  };
 
   const deleteMutation = useMutation({
     mutationFn: deletePoll,
@@ -166,7 +175,7 @@ export default function Home() {
           </Button>
           <UserMenu />
           <Button onClick={() => navigate('/poll/new')} size="sm" className="min-h-[44px]">Create Poll</Button>
-          <Button ref={importButtonRef} variant="outline" onClick={() => setImportOpen(true)} aria-label="Import poll" size="sm" className="min-h-[44px]">Import</Button>
+          <Button ref={codeButtonRef} variant="outline" onClick={() => setCodeOpen(true)} aria-label="Paste from code" size="sm" className="min-h-[44px]">Paste from code</Button>
         </div>
       </header>
 
@@ -241,26 +250,28 @@ export default function Home() {
         </div>
       )}
 
-      <Dialog open={importOpen} onOpenChange={handleImportOpenChange}>
-        <DialogContent titleId={importTitleId}>
+      <Dialog open={codeOpen} onOpenChange={handleCodeOpenChange}>
+        <DialogContent titleId={codeTitleId}>
           <DialogHeader>
-            <DialogTitle id={importTitleId}>Import Poll</DialogTitle>
+            <DialogTitle id={codeTitleId}>Paste from code</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="pollId">Poll ID</Label>
+              <Label htmlFor="shareCode">Share code</Label>
               <Input
-                id="pollId"
-                value={importPollId}
-                onChange={(e) => setImportPollId(e.target.value)}
-                placeholder="Paste the poll ID to import"
+                id="shareCode"
+                value={shareCode}
+                onChange={(e) => { setShareCode(e.target.value); setCodeError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleCodeSubmit()}
+                placeholder="Enter 6-character code"
               />
+              {codeError && <p className="text-sm text-destructive">{codeError}</p>}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportOpen(false)}>Cancel</Button>
-            <Button onClick={() => importMutation.mutate(importPollId)} disabled={importMutation.isPending || !importPollId.trim()}>
-              {importMutation.isPending ? 'Importing...' : 'Import'}
+            <Button variant="outline" onClick={() => setCodeOpen(false)}>Cancel</Button>
+            <Button onClick={handleCodeSubmit} disabled={codeLoading || !shareCode.trim()}>
+              {codeLoading ? 'Looking up...' : 'Use code'}
             </Button>
           </DialogFooter>
         </DialogContent>

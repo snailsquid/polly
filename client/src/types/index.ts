@@ -38,8 +38,18 @@ export interface Poll {
   liveTheme: string;
   resultTheme: string;
   ownerId: string;
+  shareCode?: string | null;
   options: Option[];
   runs: PollRun[];
+}
+
+export interface PollTemplate {
+  question: string;
+  channelId: string;
+  guildId: string;
+  liveTheme: string;
+  resultTheme: string;
+  options: Array<{ number: number; label: string; image?: string }>;
 }
 
 export interface ApiError {

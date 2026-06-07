@@ -215,7 +215,7 @@ export default function LivePoll() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['poll', id] });
       toast.success('Poll ended');
-      navigate(`/poll/${id}`);
+      navigate(`/poll/${id}/results`);
     },
     onError: (error) => {
       toast.error((error as { error?: string }).error || 'Failed to end poll');
