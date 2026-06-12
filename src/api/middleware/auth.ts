@@ -21,6 +21,19 @@ export function authMiddleware(
   next();
 }
 
+export function readOnlyAuthMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) {
+    res.status(401).json({ error: 'Missing x-user-id header' });
+    return;
+  }
+  next();
+}
+
 export function writeAuthMiddleware(
   req: Request,
   res: Response,

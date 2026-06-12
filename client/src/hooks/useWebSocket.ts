@@ -12,7 +12,7 @@ interface WebSocketMessage {
   payload?: unknown;
 }
 
-export function useWebSocket(pollId?: string) {
+export function useWebSocket(pollId?: string, onPollUpdate?: (poll: Poll) => void) {
   const [votes, setVotes] = useState<Vote[]>([]);
   const [pollStatus, setPollStatus] = useState<PollStatus | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -20,8 +20,10 @@ export function useWebSocket(pollId?: string) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIdRef = useRef(pollId);
   const sendMessageRef = useRef<((message: WebSocketMessage) => void) | null>(null);
+  const onPollUpdateRef = useRef(onPollUpdate);
 
   pollIdRef.current = pollId;
+  onPollUpdateRef.current = onPollUpdate;
 
   const sendMessage = (message: WebSocketMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -57,6 +59,7 @@ export function useWebSocket(pollId?: string) {
             setVotes(votes);
           }
           setPollStatus({ pollId: payload.id, status: payload.status });
+          onPollUpdateRef.current?.(payload);
         }
         if (message.type === 'poll:status' && message.payload) {
           setPollStatus(message.payload as PollStatus);

@@ -13,14 +13,19 @@ enum PollStatus {
   ENDED
 }
 
+enum VoteType {
+  NUMBER
+  TEXT
+}
+
 model Poll {
   id        String    @id @default(cuid())
   question  String
   channelId String
   guildId   String
   status    PollStatus @default(DRAFT)
+  voteType  VoteType  @default(NUMBER)
   liveTheme String    @default("bar")
-  resultTheme String  @default("bar")
   ownerId   String
   shareCode String?   @unique
   createdAt DateTime  @default(now())

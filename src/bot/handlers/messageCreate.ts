@@ -1,29 +1,27 @@
-import { Message } from 'discord.js';
-import { EventEmitter } from 'events';
-
-const VOTE_REGEX = /^([1-9])$/;
+import type { Message } from "discord.js";
+import type { EventEmitter } from "events";
 
 interface VoteEvent {
-  pollId: string;
-  option: number;
-  userId: string;
+	pollId: string;
+	text: string;
+	userId: string;
 }
 
 export function messageCreateHandler(
-  message: Message,
-  events: EventEmitter
+	message: Message,
+	events: EventEmitter,
 ): void {
-  if (message.author.bot) return;
+	if (message.author.bot) return;
 
-  const match = message.content.match(VOTE_REGEX);
-  if (!match) return;
+	// The bot is stateless about poll configuration (no DB access here), so it
+	// forwards the raw message token and lets the server resolve it against the
+	// live poll's voteType and options (numeric digit or text label match).
+	const text = message.content.trim();
+	if (!text) return;
 
-  const voteNumber = parseInt(match[1], 10);
-  const userId = message.author.id;
-
-  events.emit('vote', {
-    pollId: message.channelId,
-    option: voteNumber,
-    userId,
-  } as VoteEvent);
+	events.emit("vote", {
+		pollId: message.channelId,
+		text,
+		userId: message.author.id,
+	} as VoteEvent);
 }

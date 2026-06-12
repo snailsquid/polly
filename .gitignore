@@ -63,7 +63,11 @@ secrets/
 .opencode/
 .playwright-mcp/
 .sisyphus/
+.pi/
+.pi-lens/
 
 # Test artifacts
 client/test-results/
 *.png
+# Local Pi runtime state
+.atl/
