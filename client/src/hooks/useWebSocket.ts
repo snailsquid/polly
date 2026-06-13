@@ -33,7 +33,8 @@ export function useWebSocket(pollId?: string, onPollUpdate?: (poll: Poll) => voi
   sendMessageRef.current = sendMessage;
 
   const connect = () => {
-    const wsUrl = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = import.meta.env.VITE_WS_URL || `${protocol}//${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
