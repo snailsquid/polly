@@ -101,28 +101,6 @@ export default function CreatePoll() {
 		return true;
 	}, [question, channelId, guildId, voteType, liveTheme, options]);
 
-	const debouncedSave = useCallback(() => {
-		if (question.trim() && options.some((o) => o.label.trim())) {
-			mutation.mutate({
-				question,
-				channelId,
-				guildId,
-				voteType,
-				liveTheme,
-				options: options.filter((o) => o.label.trim()),
-			});
-		}
-	}, [question, channelId, guildId, voteType, liveTheme, options, mutation]);
-
-	useEffect(() => {
-		const timer = setTimeout(() => {
-			if (question.trim()) {
-				debouncedSave();
-			}
-		}, 1000);
-		return () => clearTimeout(timer);
-	}, [question, debouncedSave]);
-
 	useEffect(() => {
 		const timer = setTimeout(async () => {
 			if (guildId.length >= 18 && channelId.length >= 18) {

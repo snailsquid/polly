@@ -10,7 +10,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { getPoll, startPoll } from "@/lib/api";
+import { getPoll, startPoll, updatePoll } from "@/lib/api";
 import { useAuth } from "@/contexts/useAuth";
 import { toast } from "sonner";
 import type { Option, PollRun } from "@/types";
@@ -271,6 +271,46 @@ export default function Results() {
 		},
 	});
 
+	const removeWinnerAndRunAgainMutation = useMutation({
+		mutationFn: async () => {
+			if (!poll || !selectedRun) throw new Error("No poll or run selected");
+			// Find winner (option with most votes)
+			const voteCounts = votes.reduce(
+				(acc, v) => {
+					acc[v.option] = v.count;
+					return acc;
+				},
+				{} as Record<number, number>,
+			);
+			const winnerOption = Object.entries(voteCounts).reduce(
+				(max, [opt, count]) =>
+					count > max.count ? { option: parseInt(opt), count } : max,
+				{ option: 0, count: -1 },
+			).option;
+			if (winnerOption === 0) throw new Error("No winner found");
+			// Remove winner from options
+			const newOptions = poll.options.filter((o) => o.number !== winnerOption);
+			if (newOptions.length < 2) {
+				throw new Error("Cannot remove winner: poll needs at least 2 options");
+			}
+			// Update poll with new options
+			await updatePoll(id!, { options: newOptions });
+			// Start a new run
+			return startPoll(id!);
+		},
+		onSuccess: (pollRun) => {
+			queryClient.invalidateQueries({ queryKey: ["poll", id] });
+			toast.success("Winner removed and new run started");
+			navigate(`/poll/${pollRun.pollId}/live`);
+		},
+		onError: (error) => {
+			const err = error as { error?: string; message?: string };
+			toast.error(
+				err.error || err.message || "Failed to remove winner and start",
+			);
+		},
+	});
+
 	if (isLoading) {
 		return <div className="text-center py-8">Loading...</div>;
 	}
@@ -333,12 +373,25 @@ export default function Results() {
 					Back to Home
 				</Button>
 				{isOwner && !hasLiveRun && (
-					<Button
-						onClick={() => startMutation.mutate()}
-						disabled={startMutation.isPending}
-					>
-						{startMutation.isPending ? "Starting..." : "Start Another Run"}
-					</Button>
+					<>
+						<Button
+							onClick={() => startMutation.mutate()}
+							disabled={startMutation.isPending}
+						>
+							{startMutation.isPending ? "Starting..." : "Start Another Run"}
+						</Button>
+						{poll.options.length > 2 && totalVotes > 0 && (
+							<Button
+								variant="destructive"
+								onClick={() => removeWinnerAndRunAgainMutation.mutate()}
+								disabled={removeWinnerAndRunAgainMutation.isPending}
+							>
+								{removeWinnerAndRunAgainMutation.isPending
+									? "Removing..."
+									: "Remove Winner & Run Again"}
+							</Button>
+						)}
+					</>
 				)}
 			</div>
 		</div>

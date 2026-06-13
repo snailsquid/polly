@@ -620,6 +620,22 @@ export default function LivePoll() {
 		prevVotesRef.current = voteKey;
 	}, [votes, poll?.options]);
 
+	const userVoteOption = useMemo(() => {
+		const runVotes = wsVotes.length > 0 ? wsVotes : liveRun?.votes || [];
+		return (
+			runVotes.find((v: { userId: string }) => v.userId === userId)?.option ??
+			null
+		);
+	}, [wsVotes, liveRun, userId]);
+
+	const userVoteLabel = useMemo(() => {
+		if (userVoteOption === null) return null;
+		return (
+			poll?.options.find((o) => o.number === userVoteOption)?.label ??
+			`Option ${userVoteOption}`
+		);
+	}, [userVoteOption, poll]);
+
 	const endMutation = useMutation({
 		mutationFn: endPoll,
 		onSuccess: () => {
@@ -708,6 +724,11 @@ export default function LivePoll() {
 						<CardTitle className="text-center">
 							{isLive ? "Live Results" : "Results"}
 						</CardTitle>
+						{userVoteLabel && (
+							<div className="text-center text-sm font-medium text-primary">
+								Your vote: {userVoteLabel}
+							</div>
+						)}
 					</CardHeader>
 					<CardContent>
 						{theme === "bar" && (

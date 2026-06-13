@@ -195,10 +195,15 @@ export default function PollDetail() {
 	}, [question, channelId, guildId, voteType, liveTheme, options]);
 
 	const debouncedSave = useCallback(() => {
-		if (poll && question !== poll.question) {
-			updateMutation.mutate({ question });
+		if (!poll) return;
+		const changes: Partial<Poll> = {};
+		if (question !== poll.question) changes.question = question;
+		if (channelId !== poll.channelId) changes.channelId = channelId;
+		if (guildId !== poll.guildId) changes.guildId = guildId;
+		if (Object.keys(changes).length > 0) {
+			updateMutation.mutate(changes);
 		}
-	}, [poll, question, updateMutation]);
+	}, [poll, question, channelId, guildId, updateMutation]);
 
 	useEffect(() => {
 		const timer = setTimeout(debouncedSave, 1000);
@@ -430,7 +435,7 @@ export default function PollDetail() {
 								className="flex-1"
 								disabled={!isOwner}
 							/>
-							{isOwner && poll.status === "DRAFT" && (
+							{isOwner && (
 								<Button
 									type="button"
 									variant="ghost"
@@ -447,7 +452,7 @@ export default function PollDetail() {
 					{fieldErrors.options && touched.options && (
 						<p className="text-sm text-destructive">{fieldErrors.options}</p>
 					)}
-					{isOwner && poll.status === "DRAFT" && (
+					{isOwner && (
 						<Button
 							type="button"
 							variant="outline"
