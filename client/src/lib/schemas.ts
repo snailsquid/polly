@@ -10,7 +10,7 @@ export const createPollSchema = z.object({
 	channelId: z.string().optional(),
 	guildId: z.string().optional(),
 	voteType: z.enum(["NUMBER", "TEXT"]),
-	liveTheme: z.enum(["bar", "pie", "number"]),
+	liveTheme: z.enum(["bar", "pie", "number", "tree"]),
 	options: z
 		.array(optionSchema)
 		.min(2, "At least 2 options are required")
@@ -22,7 +22,7 @@ export const updatePollSchema = z.object({
 	channelId: z.string().optional(),
 	guildId: z.string().optional(),
 	voteType: z.enum(["NUMBER", "TEXT"]),
-	liveTheme: z.enum(["bar", "pie", "number"]),
+	liveTheme: z.enum(["bar", "pie", "number", "tree"]),
 	options: z
 		.array(optionSchema)
 		.min(2, "At least 2 options are required")

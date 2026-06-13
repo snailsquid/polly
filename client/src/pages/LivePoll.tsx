@@ -10,7 +10,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { getPoll, endPoll } from "@/lib/api";
+import { getPoll, endPoll, updatePoll } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAuth } from "@/contexts/useAuth";
 import { toast } from "sonner";
@@ -620,22 +620,6 @@ export default function LivePoll() {
 		prevVotesRef.current = voteKey;
 	}, [votes, poll?.options]);
 
-	const userVoteOption = useMemo(() => {
-		const runVotes = wsVotes.length > 0 ? wsVotes : liveRun?.votes || [];
-		return (
-			runVotes.find((v: { userId: string }) => v.userId === userId)?.option ??
-			null
-		);
-	}, [wsVotes, liveRun, userId]);
-
-	const userVoteLabel = useMemo(() => {
-		if (userVoteOption === null) return null;
-		return (
-			poll?.options.find((o) => o.number === userVoteOption)?.label ??
-			`Option ${userVoteOption}`
-		);
-	}, [userVoteOption, poll]);
-
 	const endMutation = useMutation({
 		mutationFn: endPoll,
 		onSuccess: () => {
@@ -645,6 +629,16 @@ export default function LivePoll() {
 		},
 		onError: (error) => {
 			toast.error((error as { error?: string }).error || "Failed to end poll");
+		},
+	});
+
+	const updateThemeMutation = useMutation({
+		mutationFn: (newTheme: string) => updatePoll(id!, { liveTheme: newTheme }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["poll", id] });
+		},
+		onError: () => {
+			toast.error("Failed to save theme");
 		},
 	});
 
@@ -695,7 +689,15 @@ export default function LivePoll() {
 							View Results
 						</Button>
 					) : (
-						<Select value={theme} onValueChange={(v) => v && setTheme(v)}>
+						<Select
+						value={theme}
+						onValueChange={(v) => {
+							if (v) {
+								setTheme(v);
+								updateThemeMutation.mutate(v);
+							}
+						}}
+					>
 							<SelectTrigger className="w-32">
 								<SelectValue />
 							</SelectTrigger>
@@ -724,11 +726,6 @@ export default function LivePoll() {
 						<CardTitle className="text-center">
 							{isLive ? "Live Results" : "Results"}
 						</CardTitle>
-						{userVoteLabel && (
-							<div className="text-center text-sm font-medium text-primary">
-								Your vote: {userVoteLabel}
-							</div>
-						)}
 					</CardHeader>
 					<CardContent>
 						{theme === "bar" && (

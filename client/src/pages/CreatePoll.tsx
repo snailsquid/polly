@@ -17,7 +17,7 @@ import { createPollSchema } from "@/lib/schemas";
 import { toast } from "sonner";
 import type { Option, PollTemplate } from "@/types";
 
-const THEMES = ["bar", "pie", "number"] as const;
+const THEMES = ["bar", "pie", "number", "tree"] as const;
 
 function generateId(): string {
 	return Math.random().toString(36).substring(2, 15);

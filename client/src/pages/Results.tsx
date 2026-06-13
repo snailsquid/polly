@@ -208,6 +208,332 @@ function NumberDisplay({
 	);
 }
 
+const TREE_PALETTE = [
+	{ trunk: "#854d0e", leaves: "#15803d", bloom: "#4ade80" },
+	{ trunk: "#78350f", leaves: "#b45309", bloom: "#fbbf24" },
+	{ trunk: "#7f1d1d", leaves: "#be123c", bloom: "#fb7185" },
+	{ trunk: "#1e3a8a", leaves: "#1d4ed8", bloom: "#60a5fa" },
+	{ trunk: "#4c1d95", leaves: "#6d28d9", bloom: "#c084fc" },
+	{ trunk: "#134e4a", leaves: "#0f766e", bloom: "#2dd4bf" },
+	{ trunk: "#831843", leaves: "#9d174d", bloom: "#f9a8d4" },
+	{ trunk: "#365314", leaves: "#4d7c0f", bloom: "#a3e635" },
+];
+
+interface Branch {
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+	width: number;
+	level: number;
+}
+interface Tip {
+	x: number;
+	y: number;
+	r: number;
+}
+
+function buildTree(
+	cx: number,
+	groundY: number,
+	votes: number,
+	seed: number = 0,
+): { branches: Branch[]; tips: Tip[]; topY: number } {
+	if (votes === 0) return { branches: [], tips: [], topY: groundY - 8 };
+
+	let s = (seed * 1664525 + 1013904223) >>> 0;
+	const rng = () => {
+		s = (s * 1664525 + 1013904223) >>> 0;
+		return s / 4294967295;
+	};
+
+	const trunkH = votes <= 5 ? votes * 17 : Math.min(85 + (votes - 5) * 6, 190);
+	const trunkW = Math.min(2 + votes * 0.55, 12);
+
+	const branches: Branch[] = [];
+	const tips: Tip[] = [];
+
+	branches.push({
+		x1: cx,
+		y1: groundY,
+		x2: cx,
+		y2: groundY - trunkH,
+		width: trunkW,
+		level: 0,
+	});
+
+	if (votes >= 3) {
+		const numBranches = Math.min(1 + Math.floor(votes / 2), 7);
+		const usedH: number[] = [];
+
+		const addBranch = (
+			bY: number,
+			baseBLen: number,
+			bW: number,
+			dir: number,
+		) => {
+			const bLen = baseBLen * (0.8 + rng() * 0.4);
+			const ex = cx + dir * bLen * (0.78 + (rng() - 0.5) * 0.24);
+			const ey = bY - bLen * (0.38 + (rng() - 0.5) * 0.22);
+			branches.push({ x1: cx, y1: bY, x2: ex, y2: ey, width: bW, level: 1 });
+
+			if (rng() < 0.3 && bLen > 9) {
+				const subW = Math.max(bW * 0.55, 0.5);
+				const s1Len = bLen * (0.35 + rng() * 0.28);
+				const s1x = ex + dir * s1Len * (0.55 + rng() * 0.38);
+				const s1y = ey - s1Len * (0.5 + rng() * 0.38);
+				branches.push({
+					x1: ex,
+					y1: ey,
+					x2: s1x,
+					y2: s1y,
+					width: subW,
+					level: 2,
+				});
+				const r1 =
+					Math.min(Math.max(2.5, s1Len * 0.28), 5.5) * (0.75 + rng() * 0.5);
+				tips.push({ x: s1x, y: s1y - r1 * 0.2, r: r1 });
+				const s2Len = bLen * (0.35 + rng() * 0.28);
+				const s2x = ex + dir * s2Len * (0.12 + rng() * 0.28);
+				const s2y = ey - s2Len * (0.68 + rng() * 0.28);
+				branches.push({
+					x1: ex,
+					y1: ey,
+					x2: s2x,
+					y2: s2y,
+					width: subW,
+					level: 2,
+				});
+				const r2 =
+					Math.min(Math.max(2.5, s2Len * 0.28), 5.5) * (0.75 + rng() * 0.5);
+				tips.push({ x: s2x, y: s2y - r2 * 0.2, r: r2 });
+			} else {
+				const leafR =
+					Math.min(Math.max(3.5, bLen * 0.27), 7) * (0.75 + rng() * 0.5);
+				tips.push({ x: ex, y: ey - leafR * 0.2, r: leafR });
+			}
+		};
+
+		for (let i = 0; i < numBranches; i++) {
+			let hFrac = 0.14 + rng() * 0.64;
+			let tries = 0;
+			while (tries++ < 8 && usedH.some((h) => Math.abs(h - hFrac) < 0.11)) {
+				hFrac = 0.14 + rng() * 0.64;
+			}
+			if (hFrac > 0.85) continue;
+			usedH.push(hFrac);
+
+			const bY = groundY - trunkH * hFrac;
+			const spreadRatio =
+				votes <= 8
+					? Math.max(0.28 - i * 0.025, 0.1)
+					: Math.max(0.18 - i * 0.018, 0.07);
+			const baseBLen = Math.min(trunkH * spreadRatio, 20);
+			const bW = Math.max(trunkW * (0.22 + rng() * 0.1), 0.75);
+			addBranch(bY, baseBLen, bW, rng() < 0.5 ? -1 : 1);
+		}
+	}
+
+	const topTrunkY = groundY - trunkH;
+	const canopyR = Math.min(8 + votes * 1.4, 38);
+
+	tips.push({ x: cx, y: topTrunkY - canopyR * 0.35, r: canopyR });
+	if (votes >= 4) {
+		tips.push({
+			x: cx - canopyR * 0.55,
+			y: topTrunkY + canopyR * 0.1,
+			r: canopyR * 0.65,
+		});
+		tips.push({
+			x: cx + canopyR * 0.55,
+			y: topTrunkY + canopyR * 0.1,
+			r: canopyR * 0.65,
+		});
+	}
+	if (votes >= 12) {
+		tips.push({
+			x: cx - canopyR * 0.25,
+			y: topTrunkY - canopyR * 0.88,
+			r: canopyR * 0.5,
+		});
+		tips.push({
+			x: cx + canopyR * 0.25,
+			y: topTrunkY - canopyR * 0.88,
+			r: canopyR * 0.5,
+		});
+	}
+
+	const topY = topTrunkY - canopyR * (votes >= 12 ? 1.45 : 1.0) - 4;
+	return { branches, tips, topY };
+}
+
+function treeHeightNeeded(votes: number): number {
+	if (votes === 0) return 14;
+	const trunkH = votes <= 5 ? votes * 17 : Math.min(85 + (votes - 5) * 6, 190);
+	const canopyR = Math.min(8 + votes * 1.4, 38);
+	return trunkH + canopyR * (votes >= 12 ? 1.5 : 1.1) + 10;
+}
+
+function ForestChart({
+	votes,
+	options,
+}: {
+	votes: VoteCount[];
+	options: Option[];
+}) {
+	const maxVotes = Math.max(...votes.map((v) => v.count), 0);
+	const n = votes.length;
+	const treeSpacing = Math.max(110, Math.min(180, 700 / n));
+	const svgW = Math.max(400, n * treeSpacing);
+
+	const maxTreeH = Math.max(...votes.map((v) => treeHeightNeeded(v.count)), 30);
+	const groundH = 60;
+	const topPad = 22;
+	const svgH = maxTreeH + groundH + topPad;
+	const groundY = svgH - groundH;
+
+	return (
+		<div className="w-full overflow-x-auto rounded-lg">
+			<svg
+				viewBox={`0 0 ${svgW} ${svgH}`}
+				className="w-full"
+				style={{ minHeight: "160px" }}
+			>
+				<defs>
+					<linearGradient id="rSky" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0%" stopColor="#bfdbfe" />
+						<stop offset="100%" stopColor="#d1fae5" />
+					</linearGradient>
+					<linearGradient id="rGround" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0%" stopColor="#4ade80" />
+						<stop offset="55%" stopColor="#166534" />
+						<stop offset="100%" stopColor="#052e16" />
+					</linearGradient>
+				</defs>
+
+				<rect x="0" y="0" width={svgW} height={svgH} fill="url(#rSky)" rx="8" />
+				<rect
+					x="0"
+					y={groundY}
+					width={svgW}
+					height={svgH - groundY}
+					fill="url(#rGround)"
+				/>
+				<line
+					x1="0"
+					y1={groundY}
+					x2={svgW}
+					y2={groundY}
+					stroke="#86efac"
+					strokeWidth="1.5"
+				/>
+
+				{votes.map((vote, i) => {
+					const opt = options.find((o) => o.number === vote.option);
+					const cx = treeSpacing * i + treeSpacing / 2;
+					const color = TREE_PALETTE[i % TREE_PALETTE.length];
+					const isLeading = vote.count > 0 && vote.count === maxVotes;
+					const { branches, tips, topY } = buildTree(
+						cx,
+						groundY,
+						vote.count,
+						i,
+					);
+
+					return (
+						<g key={vote.option}>
+							{vote.count === 0 && (
+								<ellipse
+									cx={cx}
+									cy={groundY - 4}
+									rx={6}
+									ry={4}
+									fill="#854d0e"
+									opacity={0.75}
+								/>
+							)}
+
+							{branches.map((b, bi) => (
+								<line
+									key={bi}
+									x1={b.x1}
+									y1={b.y1}
+									x2={b.x2}
+									y2={b.y2}
+									stroke={color.trunk}
+									strokeWidth={b.width}
+									strokeLinecap="round"
+									style={{
+										transition: "all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)",
+									}}
+								/>
+							))}
+
+							{tips.map((tip, ti) => (
+								<circle
+									key={ti}
+									cx={tip.x}
+									cy={tip.y}
+									r={tip.r}
+									fill={isLeading ? color.bloom : color.leaves}
+									opacity={0.88}
+									style={{ transition: "all 0.55s ease" }}
+								/>
+							))}
+
+							{isLeading && (
+								<text
+									x={cx}
+									y={topY - 4}
+									textAnchor="middle"
+									fontSize="16"
+									style={{ transition: "all 0.55s ease" }}
+								>
+									👑
+								</text>
+							)}
+
+							<text
+								x={cx}
+								y={groundY + 17}
+								textAnchor="middle"
+								fontSize="11"
+								fontWeight={isLeading ? "bold" : "normal"}
+								style={{ fill: "#fff", fontFamily: "inherit" }}
+							>
+								{opt?.label || `Option ${vote.option}`}
+							</text>
+							<text
+								x={cx}
+								y={groundY + 31}
+								textAnchor="middle"
+								fontSize="10"
+								style={{
+									fill: isLeading ? "#4ade80" : "#86efac",
+									fontFamily: "inherit",
+								}}
+							>
+								{vote.count} vote{vote.count !== 1 ? "s" : ""}
+							</text>
+
+							<text
+								x={cx}
+								y={groundY + 47}
+								textAnchor="middle"
+								fontSize="9"
+								fill="rgba(255,255,255,0.55)"
+								fontFamily="inherit"
+							>
+								Vote {vote.option}
+							</text>
+						</g>
+					);
+				})}
+			</svg>
+		</div>
+	);
+}
+
 export default function Results() {
 	const { id } = useParams<{ id: string }>();
 	const navigate = useNavigate();
@@ -360,6 +686,9 @@ export default function Results() {
 					{theme === "pie" && <PieChart votes={votes} options={poll.options} />}
 					{theme === "number" && (
 						<NumberDisplay votes={votes} options={poll.options} />
+					)}
+					{theme === "tree" && (
+						<ForestChart votes={votes} options={poll.options} />
 					)}
 				</CardContent>
 			</Card>

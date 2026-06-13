@@ -26,7 +26,7 @@ import { useAuth } from "@/contexts/useAuth";
 import { toast } from "sonner";
 import type { Poll, Option } from "@/types";
 
-const THEMES = ["bar", "pie", "number"] as const;
+const THEMES = ["bar", "pie", "number", "tree"] as const;
 const DURATION_OPTIONS = [
 	{ value: "", label: "No timer" },
 	{ value: "15", label: "15s" },
