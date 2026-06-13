@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -388,24 +388,48 @@ function ForestChart({
 	votes: VoteCount[];
 	options: Option[];
 }) {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const [dims, setDims] = useState({ w: 1200, h: 600 });
+
+	useEffect(() => {
+		const el = containerRef.current;
+		if (!el) return;
+		const obs = new ResizeObserver((entries) => {
+			for (const e of entries) {
+				const { width, height } = e.contentRect;
+				setDims((prev) => {
+					if (prev.w === width && prev.h === height) return prev;
+					return { w: width, h: height };
+				});
+			}
+		});
+		obs.observe(el);
+		return () => obs.disconnect();
+	}, []);
+
 	const maxVotes = Math.max(...votes.map((v) => v.count), 0);
 	const n = votes.length;
-	const treeSpacing = Math.max(110, Math.min(180, 700 / n));
-	const svgW = Math.max(400, n * treeSpacing);
 
-	const maxTreeH = Math.max(...votes.map((v) => treeHeightNeeded(v.count)), 30);
+	// Scale trees to fill available height
+	const treeScale = Math.max(1, dims.h / 400);
+	const treeSpacing = Math.max(80, dims.w / n);
+	const svgW = Math.max(dims.w, n * treeSpacing);
+
+	const maxTreeH = Math.max(
+		...votes.map((v) => treeHeightNeeded(v.count) * treeScale),
+		dims.h * 0.4,
+	);
 	const groundH = 60;
 	const topPad = 22;
-	const svgH = maxTreeH + groundH + topPad;
+	const svgH = Math.max(dims.h, maxTreeH + groundH + topPad);
 	const groundY = svgH - groundH;
 
 	return (
-		<div className="w-full overflow-x-auto rounded-lg">
-			<svg
-				viewBox={`0 0 ${svgW} ${svgH}`}
-				className="w-full"
-				style={{ minHeight: "160px" }}
-			>
+		<div
+			ref={containerRef}
+			className="w-full h-full overflow-hidden rounded-lg"
+		>
+			<svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-full">
 				<defs>
 					<linearGradient id="rSky" x1="0" y1="0" x2="0" y2="1">
 						<stop offset="0%" stopColor="#bfdbfe" />
@@ -449,57 +473,63 @@ function ForestChart({
 
 					return (
 						<g key={vote.option}>
-							{vote.count === 0 && (
-								<ellipse
-									cx={cx}
-									cy={groundY - 4}
-									rx={6}
-									ry={4}
-									fill="#854d0e"
-									opacity={0.75}
-								/>
-							)}
+							{/* Seed + tree visual — scaled to fill space */}
+							<g
+								transform={`translate(${cx}, ${groundY}) scale(${treeScale}) translate(${-cx}, ${-groundY})`}
+							>
+								{vote.count === 0 && (
+									<ellipse
+										cx={cx}
+										cy={groundY - 4}
+										rx={6}
+										ry={4}
+										fill="#854d0e"
+										opacity={0.75}
+									/>
+								)}
 
-							{branches.map((b, bi) => (
-								<line
-									key={bi}
-									x1={b.x1}
-									y1={b.y1}
-									x2={b.x2}
-									y2={b.y2}
-									stroke={color.trunk}
-									strokeWidth={b.width}
-									strokeLinecap="round"
-									style={{
-										transition: "all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)",
-									}}
-								/>
-							))}
+								{branches.map((b, bi) => (
+									<line
+										key={bi}
+										x1={b.x1}
+										y1={b.y1}
+										x2={b.x2}
+										y2={b.y2}
+										stroke={color.trunk}
+										strokeWidth={b.width}
+										strokeLinecap="round"
+										style={{
+											transition: "all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)",
+										}}
+									/>
+								))}
 
-							{tips.map((tip, ti) => (
-								<circle
-									key={ti}
-									cx={tip.x}
-									cy={tip.y}
-									r={tip.r}
-									fill={isLeading ? color.bloom : color.leaves}
-									opacity={0.88}
-									style={{ transition: "all 0.55s ease" }}
-								/>
-							))}
+								{tips.map((tip, ti) => (
+									<circle
+										key={ti}
+										cx={tip.x}
+										cy={tip.y}
+										r={tip.r}
+										fill={isLeading ? color.bloom : color.leaves}
+										opacity={0.88}
+										style={{ transition: "all 0.55s ease" }}
+									/>
+								))}
 
-							{isLeading && (
-								<text
-									x={cx}
-									y={topY - 4}
-									textAnchor="middle"
-									fontSize="16"
-									style={{ transition: "all 0.55s ease" }}
-								>
-									👑
-								</text>
-							)}
+								{isLeading && (
+									<text
+										x={cx}
+										y={topY - 4}
+										textAnchor="middle"
+										fontSize="16"
+										style={{ transition: "all 0.55s ease" }}
+									>
+										👑
+									</text>
+								)}
+							</g>
 
+							{/* Labels — always readable size */}
 							<text
 								x={cx}
 								y={groundY + 17}
@@ -674,8 +704,7 @@ export default function Results() {
 				tied.map((n) => ({
 					number: n,
 					label:
-						poll!.options.find((o) => o.number === n)?.label ||
-						`Option ${n}`,
+						poll!.options.find((o) => o.number === n)?.label || `Option ${n}`,
 					count: voteCounts[n],
 				})),
 			);
@@ -700,79 +729,146 @@ export default function Results() {
 
 	return (
 		<>
-		<div className="container mx-auto p-4 max-w-3xl space-y-6">
-			<div className="flex items-center justify-between">
-				<h1 className="text-2xl font-bold">{poll.question}</h1>
-			</div>
+			{theme === "tree" ? (
+				<div className="min-h-screen flex flex-col">
+					{/* Compact bar: question, run selector, actions */}
+					<div className="border-b p-3 flex items-center justify-between gap-4 shrink-0">
+						<div className="flex items-center gap-3 min-w-0">
+							<h1 className="text-lg font-bold truncate">{poll.question}</h1>
+							{endedRuns.length >= 2 && (
+								<Select
+									value={selectedRunId ?? ""}
+									onValueChange={(v) => v && setSelectedRunId(v)}
+								>
+									<SelectTrigger className="w-32">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{endedRuns.map((r) => (
+											<SelectItem key={r.id} value={r.id}>
+												Run {r.runNumber}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							)}
+						</div>
+						<div className="flex items-center gap-3">
+							<span className="text-sm text-muted-foreground">
+								Total: {totalVotes} votes
+							</span>
+							<Button variant="outline" size="sm" onClick={() => navigate("/")}>
+								Home
+							</Button>
+							{isOwner && !hasLiveRun && (
+								<>
+									<Button
+										size="sm"
+										onClick={() => startMutation.mutate()}
+										disabled={startMutation.isPending}
+									>
+										{startMutation.isPending
+											? "Starting..."
+											: "Start Another Run"}
+									</Button>
+									{poll.options.length > 2 && totalVotes > 0 && (
+										<Button
+											variant="destructive"
+											size="sm"
+											onClick={handleRemoveWinnerAndRunAgain}
+											disabled={removeWinnerAndRunAgainMutation.isPending}
+										>
+											{removeWinnerAndRunAgainMutation.isPending
+												? "Removing..."
+												: "Remove Winner & Run Again"}
+										</Button>
+									)}
+								</>
+							)}
+						</div>
+					</div>
+					<div className="flex-1 p-4 min-h-0">
+						<ForestChart votes={votes} options={poll.options} />
+					</div>
+				</div>
+			) : (
+				<div className="container mx-auto p-4 max-w-3xl space-y-6">
+					<div className="flex items-center justify-between">
+						<h1 className="text-2xl font-bold">{poll.question}</h1>
+					</div>
 
-			{endedRuns.length >= 2 && (
-				<div className="flex items-center gap-3">
-					<span className="text-sm text-muted-foreground">Run:</span>
-					<Select
-						value={selectedRunId ?? ""}
-						onValueChange={(v) => v && setSelectedRunId(v)}
-					>
-						<SelectTrigger className="w-40">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{endedRuns.map((r) => (
-								<SelectItem key={r.id} value={r.id}>
-									Run {r.runNumber}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+					{endedRuns.length >= 2 && (
+						<div className="flex items-center gap-3">
+							<span className="text-sm text-muted-foreground">Run:</span>
+							<Select
+								value={selectedRunId ?? ""}
+								onValueChange={(v) => v && setSelectedRunId(v)}
+							>
+								<SelectTrigger className="w-40">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{endedRuns.map((r) => (
+										<SelectItem key={r.id} value={r.id}>
+											Run {r.runNumber}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+
+					<Card>
+						<CardHeader>
+							<CardTitle className="text-center">Final Results</CardTitle>
+						</CardHeader>
+						<CardContent>
+							{theme === "bar" && (
+								<BarChart votes={votes} options={poll.options} />
+							)}
+							{theme === "pie" && (
+								<PieChart votes={votes} options={poll.options} />
+							)}
+							{theme === "number" && (
+								<NumberDisplay votes={votes} options={poll.options} />
+							)}
+						</CardContent>
+					</Card>
+
+					<div className="text-center text-sm text-muted-foreground">
+						Total votes: {totalVotes}
+					</div>
+
+					<div className="flex justify-center gap-4">
+						<Button variant="outline" onClick={() => navigate("/")}>
+							Back to Home
+						</Button>
+						{isOwner && !hasLiveRun && (
+							<>
+								<Button
+									onClick={() => startMutation.mutate()}
+									disabled={startMutation.isPending}
+								>
+									{startMutation.isPending
+										? "Starting..."
+										: "Start Another Run"}
+								</Button>
+								{poll.options.length > 2 && totalVotes > 0 && (
+									<Button
+										variant="destructive"
+										onClick={handleRemoveWinnerAndRunAgain}
+										disabled={removeWinnerAndRunAgainMutation.isPending}
+									>
+										{removeWinnerAndRunAgainMutation.isPending
+											? "Removing..."
+											: "Remove Winner & Run Again"}
+									</Button>
+								)}
+							</>
+						)}
+					</div>
 				</div>
 			)}
-
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-center">Final Results</CardTitle>
-				</CardHeader>
-				<CardContent>
-					{theme === "bar" && <BarChart votes={votes} options={poll.options} />}
-					{theme === "pie" && <PieChart votes={votes} options={poll.options} />}
-					{theme === "number" && (
-						<NumberDisplay votes={votes} options={poll.options} />
-					)}
-					{theme === "tree" && (
-						<ForestChart votes={votes} options={poll.options} />
-					)}
-				</CardContent>
-			</Card>
-
-			<div className="text-center text-sm text-muted-foreground">
-				Total votes: {totalVotes}
-			</div>
-
-				<div className="flex justify-center gap-4">
-				<Button variant="outline" onClick={() => navigate("/")}>
-					Back to Home
-				</Button>
-				{isOwner && !hasLiveRun && (
-					<>
-						<Button
-							onClick={() => startMutation.mutate()}
-							disabled={startMutation.isPending}
-						>
-							{startMutation.isPending ? "Starting..." : "Start Another Run"}
-						</Button>
-						{poll.options.length > 2 && totalVotes > 0 && (
-							<Button
-								variant="destructive"
-								onClick={handleRemoveWinnerAndRunAgain}
-								disabled={removeWinnerAndRunAgainMutation.isPending}
-							>
-								{removeWinnerAndRunAgainMutation.isPending
-									? "Removing..."
-									: "Remove Winner & Run Again"}
-							</Button>
-						)}
-					</>
-				)}
-			</div>
-		</div>
 
 			<Dialog open={tieDialogOpen} onOpenChange={setTieDialogOpen}>
 				<DialogContent>
@@ -795,9 +891,7 @@ export default function Results() {
 								}}
 							>
 								<span>{opt.label}</span>
-								<span className="text-muted-foreground">
-									{opt.count} votes
-								</span>
+								<span className="text-muted-foreground">{opt.count} votes</span>
 							</Button>
 						))}
 					</div>

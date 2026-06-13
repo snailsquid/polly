@@ -365,25 +365,48 @@ function ForestChart({
 	votes: VoteCount[];
 	options: Option[];
 }) {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const [dims, setDims] = useState({ w: 1200, h: 600 });
+
+	useEffect(() => {
+		const el = containerRef.current;
+		if (!el) return;
+		const obs = new ResizeObserver((entries) => {
+			for (const e of entries) {
+				const { width, height } = e.contentRect;
+				setDims((prev) => {
+					if (prev.w === width && prev.h === height) return prev;
+					return { w: width, h: height };
+				});
+			}
+		});
+		obs.observe(el);
+		return () => obs.disconnect();
+	}, []);
+
 	const maxVotes = Math.max(...votes.map((v) => v.count), 0);
 	const n = votes.length;
-	const treeSpacing = Math.max(110, Math.min(180, 700 / n));
-	const svgW = Math.max(400, n * treeSpacing);
 
-	// Dynamic height: always fits the tallest tree
-	const maxTreeH = Math.max(...votes.map((v) => treeHeightNeeded(v.count)), 30);
+	// Scale trees to fill available height
+	const treeScale = Math.max(1, dims.h / 400);
+	const treeSpacing = Math.max(80, dims.w / n);
+	const svgW = Math.max(dims.w, n * treeSpacing);
+
+	const maxTreeH = Math.max(
+		...votes.map((v) => treeHeightNeeded(v.count) * treeScale),
+		dims.h * 0.4,
+	);
 	const groundH = 60;
 	const topPad = 22;
-	const svgH = maxTreeH + groundH + topPad;
+	const svgH = Math.max(dims.h, maxTreeH + groundH + topPad);
 	const groundY = svgH - groundH;
 
 	return (
-		<div className="w-full overflow-x-auto rounded-lg">
-			<svg
-				viewBox={`0 0 ${svgW} ${svgH}`}
-				className="w-full"
-				style={{ minHeight: "160px" }}
-			>
+		<div
+			ref={containerRef}
+			className="w-full h-full overflow-hidden rounded-lg"
+		>
+			<svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-full">
 				<defs>
 					<linearGradient id="fSky" x1="0" y1="0" x2="0" y2="1">
 						<stop offset="0%" stopColor="#bfdbfe" />
@@ -427,62 +450,63 @@ function ForestChart({
 
 					return (
 						<g key={vote.option}>
-							{/* Seed for 0 votes */}
-							{vote.count === 0 && (
-								<ellipse
-									cx={cx}
-									cy={groundY - 4}
-									rx={6}
-									ry={4}
-									fill="#854d0e"
-									opacity={0.75}
-								/>
-							)}
+							{/* Seed + tree visual — scaled to fill space */}
+							<g
+								transform={`translate(${cx}, ${groundY}) scale(${treeScale}) translate(${-cx}, ${-groundY})`}
+							>
+								{vote.count === 0 && (
+									<ellipse
+										cx={cx}
+										cy={groundY - 4}
+										rx={6}
+										ry={4}
+										fill="#854d0e"
+										opacity={0.75}
+									/>
+								)}
 
-							{/* Trunk + side branches */}
-							{branches.map((b, bi) => (
-								<line
-									key={bi}
-									x1={b.x1}
-									y1={b.y1}
-									x2={b.x2}
-									y2={b.y2}
-									stroke={color.trunk}
-									strokeWidth={b.width}
-									strokeLinecap="round"
-									style={{
-										transition: "all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)",
-									}}
-								/>
-							))}
+								{branches.map((b, bi) => (
+									<line
+										key={bi}
+										x1={b.x1}
+										y1={b.y1}
+										x2={b.x2}
+										y2={b.y2}
+										stroke={color.trunk}
+										strokeWidth={b.width}
+										strokeLinecap="round"
+										style={{
+											transition: "all 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)",
+										}}
+									/>
+								))}
 
-							{/* Leaf canopy blobs */}
-							{tips.map((tip, ti) => (
-								<circle
-									key={ti}
-									cx={tip.x}
-									cy={tip.y}
-									r={tip.r}
-									fill={isLeading ? color.bloom : color.leaves}
-									opacity={0.88}
-									style={{ transition: "all 0.55s ease" }}
-								/>
-							))}
+								{tips.map((tip, ti) => (
+									<circle
+										key={ti}
+										cx={tip.x}
+										cy={tip.y}
+										r={tip.r}
+										fill={isLeading ? color.bloom : color.leaves}
+										opacity={0.88}
+										style={{ transition: "all 0.55s ease" }}
+									/>
+								))}
 
-							{/* Crown above leader */}
-							{isLeading && (
-								<text
-									x={cx}
-									y={topY - 4}
-									textAnchor="middle"
-									fontSize="16"
-									style={{ transition: "all 0.55s ease" }}
-								>
-									👑
-								</text>
-							)}
+								{isLeading && (
+									<text
+										x={cx}
+										y={topY - 4}
+										textAnchor="middle"
+										fontSize="16"
+										style={{ transition: "all 0.55s ease" }}
+									>
+										👑
+									</text>
+								)}
+							</g>
 
-							{/* Label + count below ground */}
+							{/* Labels — always readable size */}
 							<text
 								x={cx}
 								y={groundY + 17}
@@ -506,7 +530,6 @@ function ForestChart({
 								{vote.count} vote{vote.count !== 1 ? "s" : ""}
 							</text>
 
-							{/* Vote label */}
 							<text
 								x={cx}
 								y={groundY + 47}
@@ -690,14 +713,14 @@ export default function LivePoll() {
 						</Button>
 					) : (
 						<Select
-						value={theme}
-						onValueChange={(v) => {
-							if (v) {
-								setTheme(v);
-								updateThemeMutation.mutate(v);
-							}
-						}}
-					>
+							value={theme}
+							onValueChange={(v) => {
+								if (v) {
+									setTheme(v);
+									updateThemeMutation.mutate(v);
+								}
+							}}
+						>
 							<SelectTrigger className="w-32">
 								<SelectValue />
 							</SelectTrigger>
@@ -720,28 +743,33 @@ export default function LivePoll() {
 					)}
 				</div>
 			</header>
-			<main className="flex-1 flex items-center justify-center p-8">
-				<Card className="w-full max-w-2xl">
-					<CardHeader>
-						<CardTitle className="text-center">
-							{isLive ? "Live Results" : "Results"}
-						</CardTitle>
-					</CardHeader>
-					<CardContent>
-						{theme === "bar" && (
-							<BarChart votes={votes} options={poll.options} />
-						)}
-						{theme === "pie" && (
-							<PieChart votes={votes} options={poll.options} />
-						)}
-						{theme === "number" && (
-							<NumberDisplay votes={votes} options={poll.options} />
-						)}
-						{theme === "tree" && (
-							<ForestChart votes={votes} options={poll.options} />
-						)}
-					</CardContent>
-				</Card>
+			<main className="flex-1 flex flex-col">
+				{theme === "tree" ? (
+					<div className="flex-1 p-4 min-h-0">
+						<ForestChart votes={votes} options={poll.options} />
+					</div>
+				) : (
+					<div className="flex-1 flex items-center justify-center p-8">
+						<Card className="w-full max-w-2xl">
+							<CardHeader>
+								<CardTitle className="text-center">
+									{isLive ? "Live Results" : "Results"}
+								</CardTitle>
+							</CardHeader>
+							<CardContent>
+								{theme === "bar" && (
+									<BarChart votes={votes} options={poll.options} />
+								)}
+								{theme === "pie" && (
+									<PieChart votes={votes} options={poll.options} />
+								)}
+								{theme === "number" && (
+									<NumberDisplay votes={votes} options={poll.options} />
+								)}
+							</CardContent>
+						</Card>
+					</div>
+				)}
 			</main>
 			<div aria-live="polite" aria-atomic="true" className="sr-only">
 				{announcement}
