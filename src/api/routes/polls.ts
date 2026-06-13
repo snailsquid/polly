@@ -66,6 +66,7 @@ export function createApiRouter(): Router {
 			});
 			res.json(polls);
 		} catch (error) {
+			console.error("Failed to fetch polls:", error);
 			res.status(500).json({ error: "Failed to fetch polls" });
 		}
 	});
@@ -141,6 +142,7 @@ export function createApiRouter(): Router {
 					})),
 				});
 			} catch (error) {
+				console.error("Failed to fetch poll by code:", error);
 				res.status(500).json({ error: "Failed to fetch poll by code" });
 			}
 		},
@@ -171,6 +173,7 @@ export function createApiRouter(): Router {
 
 				res.json(poll);
 			} catch (error) {
+				console.error("Failed to fetch poll:", error);
 				res.status(500).json({ error: "Failed to fetch poll" });
 			}
 		},
