@@ -10,6 +10,13 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+	DialogDescription,
+} from "@/components/ui/dialog";
 import { getPoll, startPoll, updatePoll } from "@/lib/api";
 import { useAuth } from "@/contexts/useAuth";
 import { toast } from "sonner";
@@ -540,6 +547,10 @@ export default function Results() {
 	const queryClient = useQueryClient();
 	const { userId } = useAuth();
 	const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+	const [tieDialogOpen, setTieDialogOpen] = useState(false);
+	const [tiedOptions, setTiedOptions] = useState<
+		{ number: number; label: string; count: number }[]
+	>([]);
 
 	const { data: poll, isLoading } = useQuery({
 		queryKey: ["poll", id],
@@ -598,22 +609,27 @@ export default function Results() {
 	});
 
 	const removeWinnerAndRunAgainMutation = useMutation({
-		mutationFn: async () => {
+		mutationFn: async (winnerOption?: number) => {
 			if (!poll || !selectedRun) throw new Error("No poll or run selected");
-			// Find winner (option with most votes)
-			const voteCounts = votes.reduce(
-				(acc, v) => {
-					acc[v.option] = v.count;
-					return acc;
-				},
-				{} as Record<number, number>,
-			);
-			const winnerOption = Object.entries(voteCounts).reduce(
-				(max, [opt, count]) =>
-					count > max.count ? { option: parseInt(opt), count } : max,
-				{ option: 0, count: -1 },
-			).option;
-			if (winnerOption === 0) throw new Error("No winner found");
+
+			if (!winnerOption) {
+				// Find winner (option with most votes)
+				const voteCounts = votes.reduce(
+					(acc, v) => {
+						acc[v.option] = v.count;
+						return acc;
+					},
+					{} as Record<number, number>,
+				);
+				const maxEntry = Object.entries(voteCounts).reduce(
+					(max, [opt, count]) =>
+						count > max.count ? { option: parseInt(opt), count } : max,
+					{ option: 0, count: -1 },
+				);
+				if (maxEntry.option === 0) throw new Error("No winner found");
+				winnerOption = maxEntry.option;
+			}
+
 			// Remove winner from options
 			const newOptions = poll.options.filter((o) => o.number !== winnerOption);
 			if (newOptions.length < 2) {
@@ -637,6 +653,38 @@ export default function Results() {
 		},
 	});
 
+	const handleRemoveWinnerAndRunAgain = () => {
+		if (!poll || !selectedRun) return;
+
+		const voteCounts = votes.reduce(
+			(acc, v) => {
+				acc[v.option] = v.count;
+				return acc;
+			},
+			{} as Record<number, number>,
+		);
+
+		const maxCount = Math.max(...Object.values(voteCounts));
+		const tied = Object.entries(voteCounts)
+			.filter(([, count]) => count === maxCount)
+			.map(([opt]) => parseInt(opt));
+
+		if (tied.length > 1) {
+			setTiedOptions(
+				tied.map((n) => ({
+					number: n,
+					label:
+						poll!.options.find((o) => o.number === n)?.label ||
+						`Option ${n}`,
+					count: voteCounts[n],
+				})),
+			);
+			setTieDialogOpen(true);
+		} else {
+			removeWinnerAndRunAgainMutation.mutate(tied[0]);
+		}
+	};
+
 	if (isLoading) {
 		return <div className="text-center py-8">Loading...</div>;
 	}
@@ -651,6 +699,7 @@ export default function Results() {
 	const theme = poll.liveTheme;
 
 	return (
+		<>
 		<div className="container mx-auto p-4 max-w-3xl space-y-6">
 			<div className="flex items-center justify-between">
 				<h1 className="text-2xl font-bold">{poll.question}</h1>
@@ -697,7 +746,7 @@ export default function Results() {
 				Total votes: {totalVotes}
 			</div>
 
-			<div className="flex justify-center gap-4">
+				<div className="flex justify-center gap-4">
 				<Button variant="outline" onClick={() => navigate("/")}>
 					Back to Home
 				</Button>
@@ -712,7 +761,7 @@ export default function Results() {
 						{poll.options.length > 2 && totalVotes > 0 && (
 							<Button
 								variant="destructive"
-								onClick={() => removeWinnerAndRunAgainMutation.mutate()}
+								onClick={handleRemoveWinnerAndRunAgain}
 								disabled={removeWinnerAndRunAgainMutation.isPending}
 							>
 								{removeWinnerAndRunAgainMutation.isPending
@@ -724,5 +773,36 @@ export default function Results() {
 				)}
 			</div>
 		</div>
+
+			<Dialog open={tieDialogOpen} onOpenChange={setTieDialogOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Multiple Winners</DialogTitle>
+						<DialogDescription>
+							Multiple options are tied for first place. Choose which one to
+							remove and run again:
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex flex-col gap-2">
+						{tiedOptions.map((opt) => (
+							<Button
+								key={opt.number}
+								variant="outline"
+								className="w-full justify-between"
+								onClick={() => {
+									setTieDialogOpen(false);
+									removeWinnerAndRunAgainMutation.mutate(opt.number);
+								}}
+							>
+								<span>{opt.label}</span>
+								<span className="text-muted-foreground">
+									{opt.count} votes
+								</span>
+							</Button>
+						))}
+					</div>
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }
