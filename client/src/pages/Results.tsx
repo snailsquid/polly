@@ -577,6 +577,7 @@ export default function Results() {
 	const queryClient = useQueryClient();
 	const { userId } = useAuth();
 	const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+	const userSelectedRunRef = useRef(false);
 	const [tieDialogOpen, setTieDialogOpen] = useState(false);
 	const [tiedOptions, setTiedOptions] = useState<
 		{ number: number; label: string; count: number }[]
@@ -596,11 +597,22 @@ export default function Results() {
 		[poll],
 	);
 
+	// Default to the newest ended run, and keep following it as fresher data
+	// arrives, until the user explicitly picks a run from the selector. This
+	// avoids locking onto a stale snapshot (i-1) when navigating in right after
+	// ending a run, before the refetch reflecting the latest run has landed.
+	const handleSelectRun = (v: string | null) => {
+		if (!v) return;
+		userSelectedRunRef.current = true;
+		setSelectedRunId(v);
+	};
+
 	useEffect(() => {
-		if (endedRuns.length > 0 && !selectedRunId) {
-			setSelectedRunId(endedRuns[0].id);
+		if (endedRuns.length > 0 && !userSelectedRunRef.current) {
+			const newestId = endedRuns[0].id;
+			setSelectedRunId((prev) => (prev === newestId ? prev : newestId));
 		}
-	}, [endedRuns, selectedRunId]);
+	}, [endedRuns]);
 
 	const selectedRun = useMemo(
 		() => endedRuns.find((r) => r.id === selectedRunId) ?? endedRuns[0] ?? null,
@@ -738,7 +750,7 @@ export default function Results() {
 							{endedRuns.length >= 2 && (
 								<Select
 									value={selectedRunId ?? ""}
-									onValueChange={(v) => v && setSelectedRunId(v)}
+									onValueChange={handleSelectRun}
 								>
 									<SelectTrigger className="w-32">
 										<SelectValue />
@@ -802,7 +814,7 @@ export default function Results() {
 							<span className="text-sm text-muted-foreground">Run:</span>
 							<Select
 								value={selectedRunId ?? ""}
-								onValueChange={(v) => v && setSelectedRunId(v)}
+								onValueChange={handleSelectRun}
 							>
 								<SelectTrigger className="w-40">
 									<SelectValue />
